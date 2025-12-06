@@ -12,19 +12,19 @@
     <div class="form-box">
         <h2>Daftar Akun</h2>
 
-        <form action="/service/register.php" method="post">
+        <form action="../../service/register.php" method="post">
             <div class="input-box">
-                <input type="text" required>
+                <input type="text" name="username" required>
                 <label>Nama Lengkap</label>
             </div>
 
             <div class="input-box">
-                <input type="email" required>
+                <input type="email" name="email" required>
                 <label>Email</label>
             </div>
 
             <div class="input-box">
-                <input type="password" required>
+                <input type="password" name="password" required>
                 <label>Password</label>
             </div>
 

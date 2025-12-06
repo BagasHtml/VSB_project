@@ -12,7 +12,7 @@
     <div class="form-box">
         <h2>Login</h2>
 
-        <form action="/service/login.php" method="post">
+        <form action="../../service/login.php" method="post">
             <div class="input-box">
                 <input type="email" name="email" required>
                 <label>Email</label>

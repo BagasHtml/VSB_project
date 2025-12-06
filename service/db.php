@@ -4,9 +4,9 @@ $user = "root";
 $pass = "";
 $dbs = "VSB";
 
-$db = mysqli_connect($local, $user, $pass, $db);
+$conn = mysqli_connect($local, $user, $pass, $dbs);
 
-if ($db->connect_error) {
+if ($conn->connect_error) {
     echo "Koneksi gagal";
     die();
 }
