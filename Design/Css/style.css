@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700;800&display=swap');
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+    background: #1c1c1c;
+    color: white;
+    overflow-x: hidden;
+    text-align: center;
+}
+
+/* GENERAL ANIMATION */
+.fade-down, .fade-up {
+    opacity: 0;
+    transform: translateY(40px);
+}
+.fade-down.show, .fade-up.show {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+    transition: all 1s ease-out;
+}
+
+/* NAVBAR BACKGROUND */
+.navbar-wrapper {
+    position: relative;
+    height: 150px;
+    background-image: url('../Design/Assets/background.webP');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.navbar-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(2px);
+}
+.navbar {
+    position: relative;
+    width: 90%;
+    max-width: 1400px;
+    display: flex;
+    justify-content: space-between;
+    z-index: 5;
+}
+
+/* LOGO */
+.logo {
+    font-size: 30px;
+    color: #e6e6e6;
+    font-weight: 700;
+}
+.logo span {
+    color: #FF2800;
+}
+
+/* BUTTON */
+.btn {
+    padding: 10px 22px;
+    border-radius: 7px;
+    font-weight: 600;
+    text-decoration: none;
+    backdrop-filter: blur(4px);
+    transition: .2s;
+}
+.primary {
+    background: #FF2800;
+}
+.primary:hover {
+    background: #ff4d2d;
+}
+.secondary {
+    background: #ffffff22;
+    color: white;
+}
+.secondary:hover {
+    background: #ffffff33;
+}
+
+/* HERO SECTION */
+.hero {
+    position: relative;
+    height: 75vh;
+    background-image: url('../Design/Assets/hero.jpg');
+    background-size: cover;
+    background-position: center;
+}
+.hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(2px);
+}
+.judul-utama {
+    position: relative;
+    z-index: 4;
+    padding: 25px 50px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(5px);
+}
+.judul1 { color: #d1d1d1; text-shadow: 0 0 6px #444; }
+.judul2 { color: #FF2800; text-shadow: 0 0 10px #FF2800; }
+
+/* MAIN SECTION */
+.main-section {
+    position: relative;
+    padding: 120px 20px;
+    background-image: url('../Design/Assets/main.jpg');
+    background-size: cover;
+    background-position: center;
+}
+.main-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(2px);
+}
+.content {
+    position: relative;
+    z-index: 5;
+    max-width: 750px;
+    margin: auto;
+}
+
+/* MENU BUTTONS */
+.menu-box {
+    margin-top: 25px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+.menu-btn {
+    text-decoration: none;
+    padding: 12px 28px;
+    border-radius: 7px;
+    background: #ffffff18;
+    color: white;
+    font-weight: 600;
+    transition: 0.25s;
+}
+.menu-btn:hover {
+    background: #ffffff25;
+}
+
+/* FOOTER */
+.footer-wrapper {
+    position: relative;
+    padding: 90px 0;
+    margin-top: 140px;
+    background-image: url('../Design/Assets/footer.jpg');
+    background-size: cover;
+    background-position: center;
+}
+.footer-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(2px);
+}
+.footer {
+    position: relative;
+    z-index: 4;
+}
