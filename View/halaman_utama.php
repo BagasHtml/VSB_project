@@ -40,6 +40,12 @@ $posts = $conn->query("SELECT posts.*, users.username FROM posts JOIN users ON p
 </head>
 <body class="bg-gray-100">
 
+<div class="bg-red p-4 rounded-lg shadow mb-6">
+    <form action="../service/logout.php">
+        <input type="submit" class="bg-gray-800 text-white px-4 rounded" value="logout">
+    </form>
+</div>
+
 <div class="max-w-3xl mx-auto py-6">
     <h1 class="text-2xl font-bold mb-6">Halo, <?=htmlspecialchars($user['username'])?></h1>
 
@@ -63,7 +69,7 @@ $posts = $conn->query("SELECT posts.*, users.username FROM posts JOIN users ON p
             <p class="mb-2"><?=htmlspecialchars($post['caption'])?></p>
 
             <!-- Form Komentar -->
-            <form action="add_comment.php" method="post" class="flex gap-2">
+            <form action="../service/add_comment.php" method="post" class="flex gap-2">
                 <input type="hidden" name="post_id" value="<?=$post['id']?>">
                 <input type="text" name="comment" placeholder="Tulis komentar..." class="border p-2 rounded flex-1" required>
                 <button type="submit" class="bg-gray-800 text-white px-4 rounded">Kirim</button>
