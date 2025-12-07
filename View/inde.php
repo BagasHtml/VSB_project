@@ -124,7 +124,7 @@
     <div class="relative z-10 max-w-7xl mx-auto px-4 py-20 text-center" data-aos="fade-up">
       <div class="mb-6">
         <span class="inline-block px-4 py-2 rounded-full glass text-sm font-semibold text-red-400 mb-8">
-          🎌 Forum Diskusi & Debat Anime
+          🎌 Forum Diskusi & Debat Anime, Donghua, DC, Kartun
         </span>
       </div>
       
@@ -134,7 +134,7 @@
       </h1>
       
       <p class="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-        Platform komunitas untuk berdiskusi, berdebat tentang karakter anime favorit, dan berbagi pengetahuan dengan sesama penggemar anime di Indonesia.
+        Platform komunitas untuk berdiskusi, melakukan analisis komparatif, serta berdebat secara terstruktur mengenai karakter dan konsep dari berbagai karya fiksi. Knowledge Battle menyediakan ruang bagi para pengguna untuk berbagi pengetahuan, menyusun argumen berbasis bukti (feats, statements, scaling), dan berinteraksi dengan komunitas analisis fiksi terbesar di Seluruh Dunia
       </p>
       
       <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -181,8 +181,8 @@
           Apa Itu <span class="gradient-text">Knowledge Battle?</span>
         </h2>
         <p class="text-lg text-gray-400 max-w-3xl mx-auto leading-relaxed">
-          Knowledge Battle adalah platform forum diskusi terlengkap untuk para penggemar anime di Indonesia. 
-          Tempat berkumpulnya komunitas yang passionate untuk berdebat, berbagi teori, dan menganalisis karakter anime favorit.
+          Knowledge Battle adalah platform forum diskusi terlengkap untuk para penggemar Anime, Donghua, DC, Kartun, di seluruh Dunia. 
+          Tempat berkumpulnya komunitas yang passionate untuk berdebat, berbagi teori, dan menganalisis karakter favorit.
         </p>
       </div>
       
@@ -191,8 +191,8 @@
         <div class="glass rounded-3xl p-8 h-full flex items-center justify-center" data-aos="fade-right">
           <div class="text-center">
             <div class="text-8xl mb-4">🎌</div>
-            <h3 class="text-2xl font-bold mb-3">Forum Anime Terbaik</h3>
-            <p class="text-gray-400">Komunitas anime terbesar dan teraktif di Indonesia</p>
+            <h3 class="text-2xl font-bold mb-3">Forum Diskusi Anime, Donghua, DC, Kartun Terbaik</h3>
+            <p class="text-gray-400">Komunitas anime terbesar dan teraktif di Dunia</p>
           </div>
         </div>
         
@@ -364,7 +364,7 @@
             <li><a href="#beranda" class="hover:text-white transition">Beranda</a></li>
             <li><a href="#tentang" class="hover:text-white transition">Tentang</a></li>
             <li><a href="#fitur" class="hover:text-white transition">Fitur</a></li>
-            <li><a href="creators.php" class="hover:text-white transition">Kreator</a></li>
+            <li><a href="creators.php" class="hover:text-white transition">Kreator Pembuat Web</a></li>
           </ul>
         </div>
         

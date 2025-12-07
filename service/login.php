@@ -1,23 +1,25 @@
-<?php 
+<?php
+session_start();
 include 'db.php';
 
-$email = $_POST['email'];
-$user = $_POST['username'];
-$pass = $_POST['password'];
+if(isset($_POST['email'], $_POST['password'])) {
+    $email = $_POST['email'];
+    $password = $_POST['password'];
 
-$p = "";
-echo $p;
+    $stmt = $conn->prepare("SELECT id, username, password FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-$sql = "SELECT * FROM login WHERE email = '$email' and username = '$user' and password = '$pass'";
-$hasil = mysqli_query($conn, $sql);
-
-try {
-    if(mysqli_num_rows($hasil) > 0) {
-    header("location: ../View/halaman_utama.php"); 
-} else {
-    echo "Login gagal";
-};
-} catch (Exception $p) {
-    echo "Error, akun sudah terdaftar" . $p->getMessage() . "";
+    if($user = $result->fetch_assoc()) {
+        if(password_verify($password, $user['password'])) {
+            $_SESSION['user_id'] = $user['id'];
+            header("Location: ../View/halaman_utama.php");
+            exit();
+        } else {
+            echo "Password salah!";
+        }
+    } else {
+        echo "Email tidak ditemukan!";
+    }
 }
-?>

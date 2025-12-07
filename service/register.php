@@ -1,16 +1,19 @@
-<?php 
-include 'db.php';
+<?php
+session_start();
+include 'db.php'; // path sesuai lokasi
 
-$email = $_POST['email'];
-$user = $_POST['username'];
-$pass = $_POST['password'];
+if(isset($_POST['username'], $_POST['email'], $_POST['password'])) {
+    $username = $_POST['username'];
+    $email = $_POST['email'];
+    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
-$sql = "INSERT INTO login (email, username, password) VALUES ('$email', '$user', '$pass')";
-$hasil = mysqli_query($conn, $sql);
+    $stmt = $conn->prepare("INSERT INTO users (username, email, password) VALUES (?, ?, ?)");
+    $stmt->bind_param("sss", $username, $email, $password);
 
-if($hasil) {
-    header("location: ../View/login_register/form_login.php"); 
-} else {
-    echo "Login gagal";
+    if($stmt->execute()) {
+        header("Location: ../View/login_register/form_login.php");
+        exit();
+    } else {
+        echo "Gagal daftar: ".$conn->error;
+    }
 }
-?>
