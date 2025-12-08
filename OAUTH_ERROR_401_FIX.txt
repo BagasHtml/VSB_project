@@ -1,0 +1,184 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    QUICK FIX: OAuth Error 401 invalid_client
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ Error yang Anda dapat: "OAuth client was not found. Error 401: invalid_client"
+
+Ini berarti: **Credentials (Client ID / App ID) belum di-setup dengan benar**
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🔍 STEP 1: CHECK CURRENT STATUS
+─────────────────────────────────────────────────────────────────────────────
+
+Buka: http://localhost/VSB_project/service/oauth/debug.php
+
+Ini akan show:
+  ✓ Apakah .env file ada
+  ✓ Apakah Google OAuth credentials ter-load
+  ✓ Apakah Facebook OAuth credentials ter-load
+  ✓ Redirect URI yang benar untuk setiap provider
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🛠️ STEP 2: SETUP GOOGLE OAUTH (5 MENIT)
+─────────────────────────────────────────────────────────────────────────────
+
+1. BUKA CONSOLE: https://console.cloud.google.com
+
+2. CREATE NEW PROJECT:
+   - Click "Select a project" (top bar)
+   - Click "New project"
+   - Name: "Knowledge Battle"
+   - Click "Create"
+
+3. ENABLE GOOGLE+ API:
+   - Sebelah search bar, cari: "Google+ API"
+   - Click hasil pertama
+   - Click "Enable"
+
+4. CREATE OAUTH CREDENTIALS:
+   - Go to: APIs & Services > Credentials
+   - Click "Create Credentials"
+   - Choose: "OAuth client ID"
+   - Choose: "Web application"
+   - Name: "Knowledge Battle Web"
+   
+   - Under "Authorized redirect URIs", tambahkan:
+     http://localhost/VSB_project/service/oauth/google_callback.php
+   
+   - Click "Create"
+   - COPY Client ID dan Client Secret (jangan tutup halaman ini!)
+
+5. BUKA FILE .env:
+   - File: d:\xamppp\htdocs\VSB_project\.env
+   - Cari atau tambahkan:
+     
+     GOOGLE_CLIENT_ID=paste_client_id_here
+     GOOGLE_CLIENT_SECRET=paste_client_secret_here
+   
+   - GANTI "paste_client_id_here" dengan Client ID dari Google
+   - GANTI "paste_client_secret_here" dengan Client Secret dari Google
+   - SAVE file
+
+6. TEST:
+   - Refresh: http://localhost/VSB_project/service/oauth/debug.php
+   - Google section harus show "✓ Configured"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🛠️ STEP 3: SETUP FACEBOOK OAUTH (5 MENIT)
+─────────────────────────────────────────────────────────────────────────────
+
+1. BUKA FACEBOOK DEVELOPERS: https://developers.facebook.com
+
+2. LOGIN dengan Facebook account Anda
+
+3. CREATE NEW APP:
+   - Click "My Apps" > "Create App"
+   - App name: "Knowledge Battle"
+   - App purpose: "Consumer"
+   - Click "Create App"
+
+4. ADD FACEBOOK LOGIN PRODUCT:
+   - Find "Facebook Login" di Products
+   - Click "Set Up"
+   - Choose: "Web"
+   - Click "Continue"
+
+5. CONFIGURE REDIRECT URI:
+   - Go to: Settings > Basic
+   - COPY "App ID" dan "App Secret" (jangan tutup halaman ini!)
+   
+   - Go to: Products > Facebook Login > Settings
+   - Scroll ke bawah, cari "Valid OAuth Redirect URIs"
+   - Add:
+     http://localhost/VSB_project/service/oauth/facebook_callback.php
+   - Save changes
+
+6. BUKA FILE .env:
+   - File: d:\xamppp\htdocs\VSB_project\.env
+   - Tambahkan atau update:
+     
+     FACEBOOK_APP_ID=paste_app_id_here
+     FACEBOOK_APP_SECRET=paste_app_secret_here
+   
+   - GANTI "paste_app_id_here" dengan App ID dari Facebook
+   - GANTI "paste_app_secret_here" dengan App Secret dari Facebook
+   - SAVE file
+
+7. TEST:
+   - Refresh: http://localhost/VSB_project/service/oauth/debug.php
+   - Facebook section harus show "✓ Configured"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ FINAL TEST
+─────────────────────────────────────────────────────────────────────────────
+
+1. Buka form login: http://localhost/VSB_project/View/login_register/form_login.php
+
+2. Click "Google" button
+
+3. Should redirect ke Google login (bukan error 401)
+
+4. Login dengan Google account
+
+5. Should redirect back dan auto-login ✓
+
+Jika masih error, check .env file Anda:
+- Credentials harus exact copy (jangan ada typo)
+- Jangan ada quote marks ("), jangan ada spasi extra
+- File harus di project root: d:\xamppp\htdocs\VSB_project\.env
+
+═══════════════════════════════════════════════════════════════════════════════
+
+❌ COMMON MISTAKES
+─────────────────────────────────────────────────────────────────────────────
+
+1. ❌ Typo di Client ID / App ID
+   ✓ Copy-paste jangan di-retype
+
+2. ❌ Spasi di depan atau belakang
+   GOOGLE_CLIENT_ID= xxx (spasi sebelum xxx)
+   ✓ Harus: GOOGLE_CLIENT_ID=xxx (tanpa spasi)
+
+3. ❌ Quote marks di value
+   GOOGLE_CLIENT_ID="xxx"
+   ✓ Harus: GOOGLE_CLIENT_ID=xxx (tanpa tanda kutip)
+
+4. ❌ Redirect URI tidak match
+   - Google setting: http://localhost/VSB_project/service/oauth/google_callback.php
+   - Harus sama persis dengan config (case sensitive, HTTPS vs HTTP)
+
+5. ❌ .env file di folder salah
+   ✗ d:\xamppp\htdocs\VSB_project\service\.env
+   ✓ d:\xamppp\htdocs\VSB_project\.env
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 NEXT STEPS
+─────────────────────────────────────────────────────────────────────────────
+
+After setting up Google & Facebook:
+
+1. Test social login dengan akun nyata
+2. Verify profile picture auto-download bekerja
+3. Check database user record ter-create
+4. Test email auto-verified
+5. Test repeat login dengan akun sama
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📞 STILL HAVING ISSUES?
+─────────────────────────────────────────────────────────────────────────────
+
+Check this page: http://localhost/VSB_project/service/oauth/debug.php
+
+It shows:
+  - Apakah .env exists
+  - Apakah credentials ter-load
+  - Redirect URI mana yang dipakai
+  - Detailed error messages
+
+═══════════════════════════════════════════════════════════════════════════════
