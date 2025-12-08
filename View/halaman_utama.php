@@ -98,8 +98,7 @@ $unread_count = $notifs->num_rows;
 
 $users_list=[];
 $all=$conn->query("SELECT id,username FROM users ORDER BY username");
-while($u=$all->fetch_assoc()){ $users_list[]=$u; } // 🔥 sudah benar — tidak masuk JS lagi
-
+while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 ?>
 <!DOCTYPE html>
 <html lang="en">
