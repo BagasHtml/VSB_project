@@ -19,7 +19,6 @@ if(isset($_POST['confirm_delete'])) {
     $user = $stmt->get_result()->fetch_assoc();
     
     if(password_verify($password, $user['password'])) {
-        // Hapus semua gambar post user ini
         $posts = $conn->query("SELECT image FROM posts WHERE user_id = $user_id AND image IS NOT NULL");
         while($post = $posts->fetch_assoc()) {
             if(file_exists("../uploads/" . $post['image'])) {

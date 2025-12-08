@@ -1,0 +1,138 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    ⚡ SETUP EMAIL - PETUNJUK CEPAT ⚡
+═══════════════════════════════════════════════════════════════════════════════
+
+📍 FILE YANG PERLU DIEDIT
+───────────────────────────────────────────────────────────────────────────────
+Lokasi: /service/config.email.php
+
+❌ JANGAN LAKUKAN
+───────────────────────────────────────────────────────────────────────────────
+1. Jangan commit file ini ke GitHub
+2. Jangan bagikan dengan orang lain
+3. Jangan pakai password utama Gmail (pakai app password)
+4. Jangan hapus file ini
+
+✅ YANG HARUS DILAKUKAN (3 LANGKAH MUDAH)
+───────────────────────────────────────────────────────────────────────────────
+
+🔶 LANGKAH 1: PERSIAPAN GMAIL (2 menit)
+   
+   Jika menggunakan Gmail, ikuti ini:
+   
+   1. Buka: https://myaccount.google.com
+   2. Klik: "Security" (Keamanan) di sidebar
+   3. Cari: "2-Step Verification"
+   4. Klik: "Enable 2-Step Verification"
+   5. Ikuti instruksi Google (pilih SMS atau app)
+   
+   ✅ Selesai? Lanjut ke Langkah 2
+
+🔶 LANGKAH 2: AMBIL APP PASSWORD (1 menit)
+   
+   1. Buka: https://myaccount.google.com/apppasswords
+   2. Pilih:
+      - App: "Mail"
+      - Device: "Windows Computer" (atau device Anda)
+   3. Klik: "Generate"
+   4. Google akan tampilkan password 16 karakter
+      Contoh: abcd efgh ijkl mnop
+   5. Copy password ini (dengan spasi)
+   
+   ✅ Selesai? Lanjut ke Langkah 3
+
+🔶 LANGKAH 3: ISI FILE KONFIGURASI (1 menit)
+   
+   Buka file: /service/config.email.php
+   
+   Cari baris ini:
+   ┌─────────────────────────────────────────────────────────┐
+   │  'username' => 'your-email@gmail.com',                  │
+   │  'password' => 'your-app-password',                     │
+   │  'email' => 'your-email@gmail.com',                     │
+   └─────────────────────────────────────────────────────────┘
+   
+   Ganti dengan data Anda:
+   ┌─────────────────────────────────────────────────────────┐
+   │  'username' => 'nama@gmail.com',                        │
+   │  'password' => 'abcd efgh ijkl mnop',                   │
+   │  'email' => 'nama@gmail.com',                           │
+   └─────────────────────────────────────────────────────────┘
+   
+   Kemudian: SAVE FILE ✅
+   
+   🎉 SELESAI! Email sudah siap!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📧 UJI COBA EMAIL SEKARANG
+───────────────────────────────────────────────────────────────────────────────
+
+1. Buka browser:
+   http://localhost/VSB_project/View/login_register/form_register.php
+
+2. Masukkan email test:
+   coba@gmail.com (atau email Anda sendiri)
+
+3. Klik tombol:
+   "Kirim OTP"
+
+4. Tunggu 2-3 detik
+
+5. Cek email:
+   Lihat inbox atau folder spam
+
+6. Jika email masuk:
+   ✅ EMAIL SUDAH BERFUNGSI!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+❓ JIKA MASALAH
+───────────────────────────────────────────────────────────────────────────────
+
+Q: Sistem bilang "OTP test: 123456"?
+A: Email belum dikonfigurasi. Lakukan Langkah 3 di atas.
+
+Q: "SMTP Error: Could not authenticate"?
+A: Password salah. Pastikan:
+   1. 2FA Gmail sudah enabled
+   2. App password 16 karakter (with spaces)
+   3. Copy paste dengan teliti
+
+Q: Email tidak masuk inbox?
+A: Cek folder SPAM dulu. Atau tunggu 5 menit.
+
+Q: "Email tidak dikonfigurasi. Gunakan kode ini untuk testing"?
+A: Ini normal saat development. Pakai kode OTP tersebut untuk test.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📚 LIHAT JUGA
+───────────────────────────────────────────────────────────────────────────────
+File: SETUP_EMAIL_ID.md  → Panduan lengkap
+File: README_SYSTEM.md   → Overview sistem
+File: STATUS_REPORT.txt  → Status lengkap
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 RINGKASAN
+───────────────────────────────────────────────────────────────────────────────
+
+✅ UI/UX sudah bagus (glassmorphism modern)
+✅ Fitur email OTP sudah lengkap
+✅ Keamanan sudah implementasi (BCRYPT, rate limiting)
+✅ Dokumentasi sudah lengkap
+
+❌ Yang masih perlu: ATUR EMAIL (5 menit)
+
+Caranya:
+   1. Edit /service/config.email.php
+   2. Ganti email & password
+   3. Simpan
+   4. Selesai!
+
+═══════════════════════════════════════════════════════════════════════════════
+Waktu setup total: ~5 menit
+Waktu test: ~2 menit
+TOTAL: ~7 menit untuk siap production!
+═══════════════════════════════════════════════════════════════════════════════

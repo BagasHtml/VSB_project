@@ -1,0 +1,216 @@
+═══════════════════════════════════════════════════════════════════════════════
+             EMAIL SETUP GUIDE - UNTUK SETIAP USER/CLIENT
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ PENTING: Ini bukan cuma email developer (Bagas)
+Setiap user/client HARUS setup email mereka sendiri!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🚀 3 PILIHAN SETUP (Pilih 1 yang paling mudah)
+
+PILIHAN 1: Gunakan .env File (RECOMMENDED - Paling Aman)
+─────────────────────────────────────────────────────────────────────────────
+
+Langkah 1: Copy template
+   • File: .env.example
+   • Copy dan rename menjadi: .env
+   • Tempat: Di project root (/VSB_project/.env)
+
+Langkah 2: Edit file .env
+   Buka .env dan ganti:
+   
+   SMTP_USERNAME=your-email@gmail.com
+         ↓↓↓ GANTI ↓↓↓
+   SMTP_USERNAME=emailku@gmail.com
+   
+   SMTP_PASSWORD=your-app-password
+         ↓↓↓ GANTI ↓↓↓
+   SMTP_PASSWORD=abcd efgh ijkl mnop
+   
+   SMTP_FROM=your-email@gmail.com
+         ↓↓↓ GANTI ↓↓↓
+   SMTP_FROM=emailku@gmail.com
+
+Langkah 3: Jangan commit!
+   • Tambahkan ke .gitignore:
+     .env
+   • .env file = RAHASIA (jangan di-push ke GitHub)
+
+✅ DONE! Email sudah configured!
+
+KELEBIHAN:
+   ✓ Aman (tidak ada password di code)
+   ✓ Mudah (copy-paste)
+   ✓ Setiap user punya credentials sendiri
+   ✓ Production-ready
+
+
+PILIHAN 2: Edit config.email.php Langsung
+─────────────────────────────────────────────────────────────────────────────
+
+File: /service/config.email.php
+
+Cari dan ganti:
+   Baris dengan: 'your-email@gmail.com'
+   Ganti dengan: your actual Gmail
+   
+   Baris dengan: 'your-app-password'
+   Ganti dengan: your app password (16 chars)
+
+⚠️ PERHATIAN:
+   • Jangan commit file ini
+   • Setiap user harus edit masing-masing
+   • Tidak recommended untuk team development
+
+
+PILIHAN 3: Environment Variables (Untuk Production Server)
+─────────────────────────────────────────────────────────────────────────────
+
+Set environment variables di server:
+
+   SMTP_USERNAME = your-email@gmail.com
+   SMTP_PASSWORD = your-app-password
+   SMTP_FROM = your-email@gmail.com
+   SMTP_FROM_NAME = Knowledge Battle
+
+Cara set (tergantung server):
+   • cPanel: Addon Domains > Environment Variables
+   • Linux: /etc/environment atau .bashrc
+   • Windows: System > Environment Variables
+   • Docker: docker-compose.yml
+   • Heroku: Config Vars
+
+KELEBIHAN:
+   ✓ Paling aman (credentials di server, bukan file)
+   ✓ Ideal untuk production
+   ✓ No credentials in repo
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📧 CARA DAPAT APP PASSWORD (Sama untuk semua user)
+
+Untuk Gmail:
+
+1. Buka: https://myaccount.google.com
+2. Klik: Security (Keamanan) di sidebar
+3. Cari: "2-Step Verification"
+4. Klik: "Enable 2-Step Verification"
+5. Ikuti instruksi Google (pilih SMS atau authenticator)
+
+6. Kembali ke Security
+7. Buka: https://myaccount.google.com/apppasswords
+8. Pilih:
+   • App: Mail
+   • Device: Windows Computer (atau sesuaikan)
+9. Klik: Generate
+10. Copy password 16 karakter yang muncul
+11. Paste ke .env atau config.email.php
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 UNTUK NON-GMAIL USERS
+
+Outlook/Hotmail:
+   SMTP_HOST = smtp-mail.outlook.com
+   SMTP_PORT = 587
+   SMTP_SECURE = tls
+   SMTP_USERNAME = your-email@outlook.com
+   SMTP_PASSWORD = your-password
+
+Yahoo:
+   SMTP_HOST = smtp.mail.yahoo.com
+   SMTP_PORT = 465
+   SMTP_SECURE = ssl
+   SMTP_USERNAME = your-email@yahoo.com
+   SMTP_PASSWORD = your-app-password
+
+Custom SMTP:
+   SMTP_HOST = smtp.your-provider.com
+   SMTP_PORT = 587 (atau 465)
+   SMTP_SECURE = tls (atau ssl)
+   SMTP_USERNAME = your-username
+   SMTP_PASSWORD = your-password
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ TESTING SETELAH SETUP
+
+1. Buka: form_register.php
+2. Masukkan email Anda
+3. Klik: "Kirim OTP"
+4. Tunggu: 2-3 detik
+5. Cek inbox email Anda
+6. ✅ Email OTP harus masuk!
+
+Jika email tidak masuk:
+   • Cek folder SPAM
+   • Tunggu 5 menit (email delay)
+   • Pastikan konfigurasi benar
+   • Coba email lain
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+⚙️ UNTUK DEVELOPER/ADMIN
+
+Setup untuk development team:
+
+1. Copy .env.example → .env
+2. Setiap developer edit .env mereka
+3. Tambahkan .env ke .gitignore
+4. Deploy:
+   - Jangan push .env
+   - Set environment variables di production server
+   - Atau upload .env terpisah (secured)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🔒 SECURITY TIPS
+
+✓ JANGAN:
+   × Share .env file dengan orang lain
+   × Commit .env ke GitHub
+   × Hardcode passwords di config files
+   × Gunakan main Gmail password (pakai app password)
+   × Share screenshots dengan credentials
+
+✓ LAKUKAN:
+   ✓ Use .env file dan tambahkan ke .gitignore
+   ✓ Use app passwords (bukan main password)
+   ✓ Enable 2FA on email account
+   ✓ Change passwords regularly
+   ✓ Monitor email sending logs
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📝 CHECKLIST PER USER
+
+☐ Baca panduan ini
+☐ Pilih setup method (recommend: .env)
+☐ Get app password dari email provider
+☐ Setup credentials (.env atau config.email.php)
+☐ Test dengan form_register.php
+☐ Verify email masuk ke inbox
+☐ Selesai! System ready to use
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+RINGKASAN:
+
+Setiap user/client HARUS:
+1. Setup email credentials mereka sendiri
+2. Gunakan .env file (recommended) atau edit config.email.php
+3. Test untuk memastikan email bekerja
+4. JANGAN share credentials dengan orang lain
+
+System sudah flexible untuk multiple users!
+Setiap user punya email config mereka sendiri.
+
+═══════════════════════════════════════════════════════════════════════════════

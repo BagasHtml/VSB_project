@@ -3,8 +3,8 @@ session_start();
 include '../service/db.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login_register/form_login.php");
-    exit;
+  header("Location: login_register/form_login.php");
+  exit;
 }
 
 $user_id = $_SESSION['user_id'];
@@ -13,114 +13,93 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// Handle post upload
+// Check apakah user adalah developer/admin (level >= 50)
+$is_developer = ($user['level'] >= 50);
+
 if(isset($_POST['upload'])) {
-    $caption = $_POST['caption'];
-    $tags = $_POST['tags'] ?? '';
-    $image = $_FILES['image']['name'] ?? '';
-    $tmp = $_FILES['image']['tmp_name'] ?? '';
-    
-    if($image && move_uploaded_file($tmp, "../uploads/" . $image)) {
-        $stmt = $conn->prepare("INSERT INTO posts (user_id, image, caption, tags) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("isss", $user_id, $image, $caption, $tags);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO posts (user_id, caption, tags) VALUES (?, ?, ?)");
-        $stmt->bind_param("iss", $user_id, $caption, $tags);
+  $caption = $_POST['caption'];
+  $tags = $_POST['tags'] ?? '';
+  $image = $_FILES['image']['name'] ?? '';
+  $tmp = $_FILES['image']['tmp_name'] ?? '';
+
+  if($image && move_uploaded_file($tmp, "../uploads/" . $image)){
+    $stmt = $conn->prepare("INSERT INTO posts (user_id,image,caption,tags) VALUES(?,?,?,?)");
+    $stmt->bind_param("isss",$user_id,$image,$caption,$tags);
+  } else {
+    $stmt = $conn->prepare("INSERT INTO posts (user_id,caption,tags) VALUES(?,?,?)");
+    $stmt->bind_param("iss",$user_id,$caption,$tags);
+  }
+  $stmt->execute();
+  $post_id = $conn->insert_id;
+
+  preg_match_all('/@(\w+)/',$caption,$mentions);
+  if(!empty($mentions[1])) {
+    foreach(array_unique($mentions[1]) as $mentioned) {
+      $check=$conn->prepare("SELECT id FROM users WHERE username=?");
+      $check->bind_param("s",$mentioned);
+      $check->execute();
+      $m_user=$check->get_result()->fetch_assoc();
+
+      if($m_user && $m_user['id'] != $user_id){
+        $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'mention', ?,?)");
+        $msg = $user['username']." mentioned you in a post";
+        $notif->bind_param("iiis",$m_user['id'],$user_id,$post_id,$msg);
+        $notif->execute();
+      }
     }
-    $stmt->execute();
-    $post_id = $conn->insert_id;
-    
-    // Create notifications for mentions
-    preg_match_all('/@(\w+)/', $caption, $mentions);
-    if(!empty($mentions[1])) {
-        foreach(array_unique($mentions[1]) as $mentioned) {
-            $check = $conn->prepare("SELECT id FROM users WHERE username = ?");
-            $check->bind_param("s", $mentioned);
-            $check->execute();
-            $mentioned_user = $check->get_result()->fetch_assoc();
-            
-            if($mentioned_user && $mentioned_user['id'] != $user_id) {
-                $notif = $conn->prepare("INSERT INTO notifications (user_id, from_user_id, type, post_id, message) VALUES (?, ?, 'mention', ?, ?)");
-                $msg = $user['username'] . " mentioned you in a post";
-                $notif->bind_param("iiis", $mentioned_user['id'], $user_id, $post_id, $msg);
-                $notif->execute();
-            }
-        }
-    }
-    
-    header("Location: halaman_utama.php");
-    exit;
+  }
+  header("Location: halaman_utama.php"); exit;
 }
 
-// Handle like
-if(isset($_POST['like_post'])) {
-    $post_id = $_POST['post_id'];
-    $check = $conn->prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?");
-    $check->bind_param("ii", $post_id, $user_id);
-    $check->execute();
-    
-    if($check->get_result()->num_rows > 0) {
-        $stmt = $conn->prepare("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?");
-        $stmt->bind_param("ii", $post_id, $user_id);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)");
-        $stmt->bind_param("ii", $post_id, $user_id);
-        
-        // Create notification
-        $post_owner = $conn->prepare("SELECT user_id FROM posts WHERE id = ?");
-        $post_owner->bind_param("i", $post_id);
-        $post_owner->execute();
-        $owner = $post_owner->get_result()->fetch_assoc();
-        
-        if($owner['user_id'] != $user_id) {
-            $notif = $conn->prepare("INSERT INTO notifications (user_id, from_user_id, type, post_id, message) VALUES (?, ?, 'like', ?, ?)");
-            $msg = $user['username'] . " liked your post";
-            $notif->bind_param("iiis", $owner['user_id'], $user_id, $post_id, $msg);
-            $notif->execute();
-        }
+if(isset($_POST['like_post'])){
+  $post_id=$_POST['post_id'];
+
+  $check=$conn->prepare("SELECT id FROM post_likes WHERE post_id=? AND user_id=?");
+  $check->bind_param("ii",$post_id,$user_id);
+  $check->execute();
+
+  if($check->get_result()->num_rows>0){
+    $stmt=$conn->prepare("DELETE FROM post_likes WHERE post_id=? AND user_id=?");
+    $stmt->bind_param("ii",$post_id,$user_id);
+  } else {
+    $stmt=$conn->prepare("INSERT INTO post_likes(post_id,user_id) VALUES(?,?)");
+    $stmt->bind_param("ii",$post_id,$user_id);
+
+    $ownerQ=$conn->prepare("SELECT user_id FROM posts WHERE id=?");
+    $ownerQ->bind_param("i",$post_id);
+    $ownerQ->execute();
+    $owner=$ownerQ->get_result()->fetch_assoc();
+
+    if($owner['user_id'] != $user_id){
+      $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'like', ?,?)");
+      $msg=$user['username']." liked your post";
+      $notif->bind_param("iiis",$owner['user_id'],$user_id,$post_id,$msg);
+      $notif->execute();
     }
-    $stmt->execute();
-    header("Location: halama_utama.php");
-    exit;
+  }
+  $stmt->execute();
+  header("Location: halaman_utama.php"); exit;
 }
 
-// Mark notification as read
-if(isset($_GET['read_notif'])) {
-    $notif_id = $_GET['read_notif'];
-    $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
-    $stmt->bind_param("ii", $notif_id, $user_id);
-    $stmt->execute();
-    exit;
-}
-
-// Get posts with like count and user like status
 $posts = $conn->query("
-    SELECT posts.*, users.username, users.title, users.level,
-    (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id AND comments.parent_id IS NULL) as comment_count,
-    (SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id) as like_count,
-    (SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id AND post_likes.user_id = $user_id) as user_liked
-    FROM posts
-    JOIN users ON posts.user_id = users.id
-    ORDER BY posts.created_at DESC
+  SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
+  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id AND parent_id IS NULL) AS comment_count,
+  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
+  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id AND user_id=$user_id) AS user_liked
+  FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
 ");
 
-// Get unread notifications
 $notifs = $conn->query("
-    SELECT n.*, u.username as from_username 
-    FROM notifications n
-    JOIN users u ON n.from_user_id = u.id
-    WHERE n.user_id = $user_id AND n.is_read = 0
-    ORDER BY n.created_at DESC
-    LIMIT 10
+  SELECT n.*,u.username AS from_username
+  FROM notifications n JOIN users u ON n.from_user_id=u.id
+  WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
 ");
 $unread_count = $notifs->num_rows;
 
-// Get all users for mention
-$all_users = $conn->query("SELECT id, username FROM users ORDER BY username");
-$users_list = [];
-while($u = $all_users->fetch_assoc()) {
-    $users_list[] = $u;
-}
+$users_list=[];
+$all=$conn->query("SELECT id,username FROM users ORDER BY username");
+while($u=$all->fetch_assoc()){ $users_list[]=$u; } // 🔥 sudah benar — tidak masuk JS lagi
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -167,7 +146,6 @@ while($u = $all_users->fetch_assoc()) {
     </div>
 
     <div class="flex gap-2 items-center">
-      <!-- Notifications -->
       <div class="relative">
         <button onclick="toggleNotif()" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 relative">
           <i class="bi bi-bell text-lg"></i>
@@ -176,7 +154,6 @@ while($u = $all_users->fetch_assoc()) {
           <?php endif; ?>
         </button>
         
-        <!-- Notif Dropdown -->
         <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 glass rounded-2xl p-4 max-h-96 overflow-y-auto">
           <h3 class="font-bold mb-3 flex items-center justify-between">
             <span>Notifikasi</span>
@@ -203,24 +180,21 @@ while($u = $all_users->fetch_assoc()) {
         </div>
       </div>
 
-      <!-- User Info - Responsive -->
       <div class="hidden md:flex items-center gap-2 glass px-3 py-2 rounded-full text-sm">
         <div class="font-semibold"><?= htmlspecialchars($user['username']) ?></div>
         <span class="px-2 py-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full text-xs"><?= htmlspecialchars($user['title']) ?></span>
         <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?></span>
       </div>
 
-      <!-- Mobile User Badge -->
       <div class="md:hidden w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-sm font-bold">
         <?= strtoupper(substr($user['username'], 0, 1)) ?>
       </div>
 
-      <a href="../service/logout.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
+      <a href="index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
         <i class="bi bi-box-arrow-right"></i>
         <span class="hidden md:inline">Logout</span>
       </a>
       
-      <!-- Settings Link -->
       <a href="settings.php" class="glass hover:bg-blue-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
         <i class="bi bi-gear"></i>
       </a>
@@ -298,12 +272,24 @@ while($u = $all_users->fetch_assoc()) {
       $caption = htmlspecialchars($post['caption']);
       $caption = preg_replace('/@(\w+)/', '<span class="mention">@$1</span>', $caption);
     ?>
-      <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition">
+      <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition relative">
+        <?php if($post['is_pinned']): ?>
+          <div class="absolute top-3 right-3 md:top-4 md:right-4 bg-gradient-to-r from-yellow-500 to-amber-500 px-2 md:px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+            <i class="bi bi-pin-fill"></i>
+            <span>Pinned</span>
+          </div>
+        <?php endif; ?>
         <div class="flex justify-between items-start mb-3 md:mb-4">
           <div class="flex items-center gap-2 md:gap-3">
-            <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-base md:text-xl font-bold flex-shrink-0">
-              <?= strtoupper(substr($post['username'], 0, 1)) ?>
-            </div>
+            <?php if(!empty($post['profile_pic'])): ?>
+              <img src="../uploads/profile/<?= htmlspecialchars($post['profile_pic']) ?>" 
+                class="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-white/10">
+            <?php else: ?>
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 
+                flex items-center justify-center text-base md:text-xl font-bold">
+                  <?= strtoupper(substr($post['username'], 0, 1)) ?>
+              </div>
+            <?php endif; ?>
             <div>
               <div class="font-bold text-sm md:text-lg"><?=htmlspecialchars($post['username'])?></div>
               <div class="flex items-center gap-1 md:gap-2 text-xs">
@@ -358,6 +344,16 @@ while($u = $all_users->fetch_assoc()) {
             <span class="hidden md:inline">Share</span>
           </button>
           
+          <!-- Pin button untuk developer/admin -->
+          <?php if($is_developer): ?>
+            <button type="button" class="flex items-center gap-1 md:gap-2 glass hover:bg-yellow-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base pin-btn <?= $post['is_pinned'] ? 'text-yellow-400' : '' ?>" 
+              data-post-id="<?= $post['id'] ?>" 
+              data-pinned="<?= $post['is_pinned'] ?>">
+              <i class="bi bi-pin<?= $post['is_pinned'] ? '-fill' : '' ?>"></i>
+              <span class="hidden md:inline"><?= $post['is_pinned'] ? 'Unpin' : 'Pin' ?></span>
+            </button>
+          <?php endif; ?>
+          
           <!-- Delete button untuk post sendiri -->
           <?php if($post['user_id'] == $user_id): ?>
             <a href="delete_post.php?id=<?= $post['id'] ?>" 
@@ -375,6 +371,51 @@ while($u = $all_users->fetch_assoc()) {
 </main>
 
 <script>
+// Pin/Unpin Handler
+document.querySelectorAll('.pin-btn').forEach(btn => {
+  btn.addEventListener('click', async function(e) {
+    e.preventDefault();
+    const postId = this.dataset.postId;
+    const formData = new FormData();
+    formData.append('post_id', postId);
+
+    try {
+      const response = await fetch('../service/api/pin_post.php', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+
+      if(data.status === 'ok') {
+        // Update button state
+        const isPinned = data.is_pinned;
+        const icon = this.querySelector('i');
+        const span = this.querySelector('span');
+        
+        if(isPinned) {
+          this.classList.add('text-yellow-400');
+          icon.className = 'bi bi-pin-fill';
+          if(span) span.textContent = 'Unpin';
+        } else {
+          this.classList.remove('text-yellow-400');
+          icon.className = 'bi bi-pin';
+          if(span) span.textContent = 'Pin';
+        }
+        
+        // Reload page untuk update ordering
+        setTimeout(() => {
+          location.reload();
+        }, 300);
+      } else {
+        alert('Error: ' + (data.error || 'Gagal mengupdate pin status'));
+      }
+    } catch(error) {
+      console.error('Error:', error);
+      alert('Terjadi kesalahan');
+    }
+  });
+});
+
 // Notification toggle
 function toggleNotif() {
   const dropdown = document.getElementById('notif-dropdown');
@@ -455,7 +496,40 @@ document.addEventListener('click', function(e) {
     dropdown.classList.add('hidden');
   }
 });
-</script>
 
+fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&current_weather=true')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('temp').textContent = Math.round(data.current_weather.temperature) + '°C';
+  })
+  .catch(error => console.log("Gagal memuat cuaca", error));
+
+const captionInput = document.getElementById("caption");
+const mentionBox = document.getElementById("mention-dropdown");
+
+let users = <?php echo json_encode($users_list); ?>;
+
+captionInput.addEventListener("keyup", () => {
+    const val = captionInput.value;
+    const trigger = val.match(/@(\w*)$/);
+
+    if(trigger){
+        const search = trigger[1].toLowerCase();
+        const filtered = users.filter(u => u.username.toLowerCase().includes(search));
+
+        if(filtered.length){
+            mentionBox.innerHTML = filtered.map(u=>`<div class="mention-item p-2 hover:bg-white/10 rounded cursor-pointer">@${u.username}</div>`).join("");
+            mentionBox.classList.remove("hidden");
+
+            document.querySelectorAll(".mention-item").forEach(item=>{
+                item.onclick = ()=>{
+                    captionInput.value = val.replace(/@\w*$/, item.textContent + " ");
+                    mentionBox.classList.add("hidden");
+                }
+            });
+        } else mentionBox.classList.add("hidden");
+    } else mentionBox.classList.add("hidden");
+});
+</script>
 </body>
 </html>
