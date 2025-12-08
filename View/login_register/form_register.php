@@ -53,6 +53,19 @@
                     <i class="bi bi-send"></i> Kirim OTP
                 </button>
 
+                <div class="social-divider">
+                    <span>atau daftar dengan</span>
+                </div>
+
+                <div class="social-buttons">
+                    <a href="../../service/oauth/google_login.php?redirect=register" class="social-btn google" title="Daftar dengan Google">
+                        <i class="bi bi-google"></i> Google
+                    </a>
+                    <a href="../../service/oauth/facebook_login.php?redirect=register" class="social-btn facebook" title="Daftar dengan Facebook">
+                        <i class="bi bi-facebook"></i> Facebook
+                    </a>
+                </div>
+
                 <p class="switch">
                     Sudah punya akun?
                     <a href="form_login.php">Masuk sekarang</a>

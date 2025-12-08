@@ -1,0 +1,266 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    SOCIAL LOGIN SETUP GUIDE
+                        (Google & Facebook)
+═══════════════════════════════════════════════════════════════════════════════
+
+Sekarang sistem support login dengan Google dan Facebook!
+
+🎯 Fitur:
+   ✓ Login dengan Google
+   ✓ Daftar dengan Google
+   ✓ Login dengan Facebook  
+   ✓ Daftar dengan Facebook
+   ✓ Auto-create akun jika user baru
+   ✓ Auto-download profile picture
+   ✓ CSRF protection dengan state token
+   ✓ Email otomatis terverifikasi
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: UPDATE DATABASE SCHEMA
+─────────────────────────────────────────────────────────────────────────────
+
+Jalankan migration untuk add OAuth columns:
+
+   Cara 1: Via Browser (Termudah)
+   ────────────────────────────────
+   1. Buka: http://localhost/VSB_project/service/oauth/migrate_oauth.php
+   2. Tunggu hingga selesai
+   3. Lihat notifikasi "✅ OAuth Support Added Successfully!"
+
+   Cara 2: Via MySQL CLI
+   ──────────────────────
+   1. Buka MySQL prompt
+   2. Select database: USE vsb_knowledge_battle;
+   3. Jalankan queries:
+      
+      ALTER TABLE users ADD COLUMN oauth_id VARCHAR(255) UNIQUE DEFAULT NULL;
+      ALTER TABLE users ADD COLUMN oauth_provider VARCHAR(50) DEFAULT NULL;
+      ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0;
+      ALTER TABLE users ADD COLUMN profile_picture VARCHAR(255) DEFAULT NULL;
+
+   Cara 3: Via PhpMyAdmin
+   ──────────────────────
+   1. Buka PhpMyAdmin
+   2. Klik database: vsb_knowledge_battle
+   3. Klik tabel: users
+   4. Klik "Structure"
+   5. Klik "Add columns" di bawah
+   6. Tambahkan 4 columns:
+      - oauth_id (VARCHAR 255, UNIQUE)
+      - oauth_provider (VARCHAR 50)
+      - is_verified (TINYINT 1)
+      - profile_picture (VARCHAR 255)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 2: SETUP GOOGLE OAUTH
+─────────────────────────────────────────────────────────────────────────────
+
+A. Create Google Project & Get Credentials:
+
+   1. Buka: https://console.cloud.google.com
+   
+   2. Create Project:
+      - Click "Select a project" (top left)
+      - Click "New Project"
+      - Name: "Knowledge Battle"
+      - Create
+      
+   3. Enable Google+ API:
+      - Search: "Google+ API" di search bar
+      - Click hasil pertama
+      - Click "Enable"
+      
+   4. Create OAuth Credentials:
+      - Go to: APIs & Services > Credentials
+      - Click "Create Credentials" > "OAuth client ID"
+      - Pilih: "Web application"
+      - Name: "Knowledge Battle Web"
+      
+      - Add authorized redirect URIs:
+        * For localhost: http://localhost/VSB_project/service/oauth/google_callback.php
+        * For production: https://yourdomain.com/VSB_project/service/oauth/google_callback.php
+      
+      - Click "Create"
+      - Copy Client ID dan Client Secret
+
+B. Configure Application:
+
+   Option 1: Gunakan .env File (RECOMMENDED)
+   ──────────────────────────────────────────
+   1. Buka file .env di project root
+   2. Tambahkan:
+      
+      GOOGLE_CLIENT_ID=your_client_id_here
+      GOOGLE_CLIENT_SECRET=your_client_secret_here
+   
+   3. Save file
+   
+   Option 2: Edit config.oauth.php Langsung
+   ────────────────────────────────────────
+   1. Buka: /service/oauth/config.oauth.php
+   2. Cari baris:
+      
+      'client_id' => getenv('GOOGLE_CLIENT_ID') ?: 'YOUR_GOOGLE_CLIENT_ID',
+      
+   3. Ganti dengan:
+      
+      'client_id' => 'your_actual_client_id',
+      'client_secret' => 'your_actual_client_secret',
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 3: SETUP FACEBOOK OAUTH
+─────────────────────────────────────────────────────────────────────────────
+
+A. Create Facebook App & Get Credentials:
+
+   1. Buka: https://developers.facebook.com
+   
+   2. Create App:
+      - Click "My Apps" > "Create App"
+      - App Name: "Knowledge Battle"
+      - App Purpose: "Consumer"
+      - Create App
+   
+   3. Add Facebook Login:
+      - Find "Facebook Login" in Products
+      - Click "Set Up"
+      - Choose "Web"
+      
+   4. Configure Redirect URIs:
+      - Go to: Settings > Basic
+      - Copy "App ID" dan "App Secret" (untuk nanti)
+      
+      - Go to: Products > Facebook Login > Settings
+      - Valid OAuth Redirect URIs:
+        * For localhost: http://localhost/VSB_project/service/oauth/facebook_callback.php
+        * For production: https://yourdomain.com/VSB_project/service/oauth/facebook_callback.php
+      
+      - Save Changes
+
+B. Configure Application:
+
+   Option 1: Gunakan .env File (RECOMMENDED)
+   ──────────────────────────────────────────
+   1. Buka file .env di project root
+   2. Tambahkan:
+      
+      FACEBOOK_APP_ID=your_app_id_here
+      FACEBOOK_APP_SECRET=your_app_secret_here
+   
+   3. Save file
+   
+   Option 2: Edit config.oauth.php Langsung
+   ────────────────────────────────────────
+   1. Buka: /service/oauth/config.oauth.php
+   2. Cari baris:
+      
+      'app_id' => getenv('FACEBOOK_APP_ID') ?: 'YOUR_FACEBOOK_APP_ID',
+      
+   3. Ganti dengan:
+      
+      'app_id' => 'your_actual_app_id',
+      'app_secret' => 'your_actual_app_secret',
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 4: TEST SOCIAL LOGIN
+─────────────────────────────────────────────────────────────────────────────
+
+1. Buka form login atau register:
+   http://localhost/VSB_project/View/login_register/form_login.php
+   
+2. Lihat tombol baru: "Google" dan "Facebook"
+
+3. Click "Google" atau "Facebook"
+
+4. Login dengan akun Google/Facebook Anda
+
+5. Sistem akan:
+   ✓ Verify email via Google/Facebook
+   ✓ Auto-create akun jika user baru
+   ✓ Download profile picture
+   ✓ Redirect ke halaman utama
+
+═══════════════════════════════════════════════════════════════════════════════
+
+FILE STRUKTUR
+─────────────────────────────────────────────────────────────────────────────
+
+/service/oauth/
+  ├── config.oauth.php          ← Konfigurasi OAuth (credentials)
+  ├── google_login.php           ← Redirect ke Google
+  ├── google_callback.php        ← Handle response dari Google
+  ├── facebook_login.php         ← Redirect ke Facebook
+  ├── facebook_callback.php      ← Handle response dari Facebook
+  └── migrate_oauth.php          ← Database migration
+
+/View/login_register/
+  ├── form_login.php             ← Social buttons added
+  └── form_register.php          ← Social buttons added
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECURITY NOTES
+─────────────────────────────────────────────────────────────────────────────
+
+✓ CSRF Protection: Menggunakan state token
+✓ Secure Redirect: Hanya redirect ke registered URIs
+✓ Email Verification: Otomatis verified via provider
+✓ Password: Random generated untuk OAuth users (tidak digunakan)
+✓ Credentials: Store di .env atau environment variables
+✓ Profile Pictures: Download ke /uploads/profile/
+
+⚠️ Jangan:
+   - Commit credentials ke git (.env di .gitignore)
+   - Share client secret di public code
+   - Use hardcoded credentials di production
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────────────
+
+❌ "Invalid state token"
+   → Cookies atau session tidak bekerja
+   → Check: Session folder permissions
+   → Check: Browser cookies enabled
+   
+❌ "Could not get email from Google/Facebook"
+   → Email scope tidak included
+   → Check: Google/Facebook permissions
+   → Solution: Revoke app access dan login ulang
+   
+❌ "No authorization code received"
+   → Redirect URI tidak match
+   → Check: config.oauth.php base URL
+   → Check: Google/Facebook app settings
+   
+❌ Profile picture tidak download
+   → CURL not enabled
+   → Check: php.ini extension=php_curl.dll
+   → Check: /uploads/profile/ folder permissions
+   
+❌ "Failed to create account"
+   → Database error
+   → Check: users table has OAuth columns
+   → Run migrate_oauth.php
+   → Check: Database permissions
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NEXT STEPS
+─────────────────────────────────────────────────────────────────────────────
+
+1. ✅ Update database (Step 1)
+2. ✅ Setup Google OAuth (Step 2)
+3. ✅ Setup Facebook OAuth (Step 3)
+4. ✅ Test Social Login (Step 4)
+5. ✅ Update .env with credentials
+6. ✅ Test dengan account Google/Facebook Anda
+
+Enjoy! 🎉
+
+═══════════════════════════════════════════════════════════════════════════════

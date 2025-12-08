@@ -85,14 +85,11 @@ try {
                      $smtp['password'] !== 'your-app-password');
     
     if (!$isConfigured) {
-        // Development mode - return test OTP immediately
-        $_SESSION[$rate_limit_key]++;
-        http_response_code(200);
+        // Email not configured - return error
+        http_response_code(400);
         echo json_encode([
-            'success' => true, 
-            'message' => 'OTP test: ' . $otp . ' (Email tidak dikonfigurasi. Gunakan untuk testing)',
-            'otp_test' => $otp,
-            'mode' => 'development'
+            'success' => false, 
+            'message' => 'Email belum dikonfigurasi. Hubungi administrator untuk setup email SMTP.'
         ]);
         exit;
     }
@@ -149,25 +146,7 @@ try {
     // Email configuration error - provide helpful message
     error_log("PHPMailer Error: " . $mail->ErrorInfo);
     
-    // For development: Allow testing without email configuration
-    // In production, remove this and properly configure email
-    if (strpos($mail->ErrorInfo, 'authenticate') !== false || 
-        strpos($mail->ErrorInfo, 'MAIL FROM') !== false ||
-        strpos($mail->ErrorInfo, 'Username') !== false) {
-        
-        // Development fallback: Store OTP without sending email
-        // In production, this should NOT be used
-        $_SESSION[$rate_limit_key]++;
-        
-        http_response_code(200);
-        echo json_encode([
-            'success' => true, 
-            'message' => 'OTP test: ' . $otp . ' (Email tidak dikonfigurasi. Gunakan kode ini untuk testing)',
-            'otp_test' => $otp // Remove in production!
-        ]);
-    } else {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Gagal mengirim email: ' . $mail->ErrorInfo]);
-    }
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Gagal mengirim email: ' . $mail->ErrorInfo]);
 }
 ?>

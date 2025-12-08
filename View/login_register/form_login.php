@@ -60,6 +60,19 @@
                 <i class="bi bi-box-arrow-in-right"></i> Masuk Sekarang
             </button>
 
+            <div class="social-divider">
+                <span>atau</span>
+            </div>
+
+            <div class="social-buttons">
+                <a href="../../service/oauth/google_login.php" class="social-btn google" title="Login dengan Google">
+                    <i class="bi bi-google"></i> Google
+                </a>
+                <a href="../../service/oauth/facebook_login.php" class="social-btn facebook" title="Login dengan Facebook">
+                    <i class="bi bi-facebook"></i> Facebook
+                </a>
+            </div>
+
             <p class="switch">
                 Belum punya akun?
                 <a href="form_register.php">Daftar di sini</a>
