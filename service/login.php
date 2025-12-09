@@ -45,7 +45,6 @@ if(isset($_POST['email'], $_POST['password'])) {
 
     if($user = $result->fetch_assoc()) {
         if(password_verify($password, $user['password'])) {
-            // Reset rate limit on successful login
             $_SESSION[$rate_limit_key] = 0;
             
             $_SESSION['user_id'] = $user['id'];
@@ -65,7 +64,6 @@ if(isset($_POST['email'], $_POST['password'])) {
             exit();
         }
     } else {
-        // Increment failed attempts even if email doesn't exist (to prevent user enumeration)
         $_SESSION[$rate_limit_key]++;
         header("Location: ../View/login_register/form_login.php?error=invalid");
         exit();

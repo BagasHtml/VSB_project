@@ -1,49 +1,56 @@
 <?php
 session_start();
-require_once '../../vendor/autoload.php';
-use Google\Client as Google_Client;
+require '../../vendor/autoload.php';
+include '../db.php';
 
-// Load config
-$oauthConfig = require_once '../config/oauth.php';
-$googleConfig = $oauthConfig['google'];
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv->load();
 
-// Verifikasi state
-if (!isset($_GET['state']) || $_GET['state'] !== $_SESSION['oauth_state']) {
-    die('Invalid OAuth state.');
+$client = new Google\Client();
+$client->setClientId($_ENV['GOOGLE_CLIENT_ID']);
+$client->setClientSecret($_ENV['GOOGLE_CLIENT_SECRET']);
+$client->setRedirectUri($_ENV['GOOGLE_REDIRECT_URI']);
+$client->addScope(['email','profile','openid']);
+
+// ===== CEK TOKEN DARI GOOGLE =====
+if (isset($_GET['code'])) {
+    $token = $client->fetchAccessTokenWithAuthCode($_GET['code']);
+
+    if (isset($token['error'])) {
+        echo "<h3 style='color:red'>TOKEN ERROR:</h3>";
+        var_dump($token);
+        exit;
+    }
+
+    $client->setAccessToken($token);
+    $oauth = new Google\Service\Oauth2($client);
+    $g = $oauth->userinfo->get();
+
+    // === CEK user di database ===
+    $find = $conn->prepare("SELECT id FROM users WHERE google_id = ?");
+    $find->bind_param("s", $g->id);
+    $find->execute();
+    $user = $find->get_result()->fetch_assoc();
+
+    // Jika baru pertama kali login → buat akun otomatis
+    if (!$user) {
+        $ins = $conn->prepare("INSERT INTO users (google_id, username, email, profile_pic, level) VALUES (?, ?, ?, ?, 1)");
+        $ins->bind_param("ssss", $g->id, $g->name, $g->email, $g->picture);
+        $ins->execute();
+        $user_id = $ins->insert_id;
+    } else {
+        $user_id = $user['id'];
+    }
+
+    // ====== Simpan session biar halaman utama kebaca =====
+    $_SESSION['user_id'] = $user_id;
+    $_SESSION['email']   = $g->email;
+    $_SESSION['name']    = $g->name;
+    $_SESSION['avatar']  = $g->picture;
+
+    header("Location: ../../View/halaman_utama.php");
+    exit;
 }
 
-// Buat Google Client
-$client = new Google_Client();
-$client->setClientId($googleConfig['client_id']);
-$client->setClientSecret($googleConfig['client_secret']);
-$client->setRedirectUri($googleConfig['redirect_uri']);
-
-// Ambil code dari Google
-if (!isset($_GET['code'])) {
-    die('No authorization code returned.');
-}
-
-$code = $_GET['code'];
-
-// Tukar code dengan access token
-$token = $client->fetchAccessTokenWithAuthCode($code);
-
-// Cek error
-if (isset($token['error'])) {
-    die('Error fetching access token: ' . htmlspecialchars($token['error']));
-}
-
-// Set access token di client
-$client->setAccessToken($token['access_token']);
-
-// Ambil user info
-$oauth2 = new \Google\Service\Oauth2($client);
-$userInfo = $oauth2->userinfo->get();
-
-// Tampilkan info user
-echo "<h1>Login berhasil!</h1>";
-echo "<p><strong>ID:</strong> " . htmlspecialchars($userInfo->id) . "</p>";
-echo "<p><strong>Email:</strong> " . htmlspecialchars($userInfo->email) . "</p>";
-echo "<p><strong>Nama:</strong> " . htmlspecialchars($userInfo->name) . "</p>";
-echo "<p><img src='" . htmlspecialchars($userInfo->picture) . "' alt='Avatar'></p>";
-?>
+echo "INVALID ACCESS — tidak ada authorization code.";
+exit;

@@ -2,6 +2,11 @@
 session_start();
 include '../service/db.php';
 
+// PERBAIKAN: Cek koneksi database
+if ($conn->connect_error) {
+    die("Koneksi database gagal: " . $conn->connect_error);
+}
+
 if (!isset($_SESSION['user_id'])) {
   header("Location: login_register/form_login.php");
   exit;
@@ -12,6 +17,14 @@ if (!isset($_SESSION['user_id'])) {
  $stmt->bind_param("i", $user_id);
  $stmt->execute();
  $user = $stmt->get_result()->fetch_assoc();
+
+// PERBAIKAN UTAMA: Cek apakah user benar-benar ada di database
+if (!$user) {
+    // Jika user tidak ada, hancurkan sesi dan redirect ke halaman login
+    session_destroy();
+    header("Location: login_register/form_login.php?error=user_not_found");
+    exit;
+}
 
 // Check apakah user adalah developer/admin (level >= 50)
  $is_developer = ($user['level'] >= 50);
@@ -64,7 +77,7 @@ if(isset($_POST['update_post'])) {
           
           if($notif_check->get_result()->num_rows == 0) {
             $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'mention', ?,?)");
-            $msg = $user['username']." mentioned you in a post";
+            $msg = ($user['username'] ?? 'Someone')." mentioned you in a post";
             $notif->bind_param("iiis", $m_user['id'], $user_id, $post_id, $msg);
             $notif->execute();
           }
@@ -103,7 +116,7 @@ if(isset($_POST['upload'])) {
 
       if($m_user && $m_user['id'] != $user_id){
         $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'mention', ?,?)");
-        $msg = $user['username']." mentioned you in a post";
+        $msg = ($user['username'] ?? 'Someone')." mentioned you in a post";
         $notif->bind_param("iiis",$m_user['id'],$user_id,$post_id,$msg);
         $notif->execute();
       }
@@ -133,7 +146,7 @@ if(isset($_POST['like_post'])){
 
     if($owner['user_id'] != $user_id){
       $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'like', ?,?)");
-      $msg=$user['username']." liked your post";
+      $msg=($user['username'] ?? 'Someone')." liked your post";
       $notif->bind_param("iiis",$owner['user_id'],$user_id,$post_id,$msg);
       $notif->execute();
     }
@@ -144,17 +157,17 @@ if(isset($_POST['like_post'])){
 
 // Query dengan total comments termasuk replies
  $posts = $conn->query("
-  SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
-  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
-  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
-  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id AND user_id=$user_id) AS user_liked
-  FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
+ SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
+ (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
+ (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
+ (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id AND user_id=$user_id) AS user_liked
+ FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
 ");
 
  $notifs = $conn->query("
-  SELECT n.*,u.username AS from_username
-  FROM notifications n JOIN users u ON n.from_user_id=u.id
-  WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
+ SELECT n.*,u.username AS from_username
+ FROM notifications n JOIN users u ON n.from_user_id=u.id
+ WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
 ");
  $unread_count = $notifs->num_rows;
 
@@ -298,16 +311,16 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
                class="w-8 h-8 rounded-full object-cover border border-white/10">
         <?php else: ?>
           <div class="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-sm font-bold">
-            <?= strtoupper(substr($user['username'], 0, 1)) ?>
+            <?= strtoupper(substr($user['username'] ?? 'U', 0, 1)) ?>
           </div>
         <?php endif; ?>
-        <div class="font-semibold"><?= htmlspecialchars($user['username']) ?></div>
-        <span class="px-2 py-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full text-xs"><?= htmlspecialchars($user['title']) ?></span>
-        <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?></span>
+        <div class="font-semibold"><?= htmlspecialchars($user['username'] ?? 'Unknown') ?></div>
+        <span class="px-2 py-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full text-xs"><?= htmlspecialchars($user['title'] ?? 'Member') ?></span>
+        <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?? 1 ?></span>
       </div>
 
       <div class="md:hidden w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-sm font-bold">
-        <?= strtoupper(substr($user['username'], 0, 1)) ?>
+        <?= strtoupper(substr($user['username'] ?? 'U', 0, 1)) ?>
       </div>
 
       <a href="index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
@@ -339,7 +352,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       <div class="flex flex-col md:flex-row items-center md:justify-between text-center md:text-left">
         <div>
           <p class="text-gray-400 text-xs md:text-sm">Level</p>
-          <h3 class="text-xl md:text-3xl font-bold text-yellow-400"><?= $user['level'] ?></h3>
+          <h3 class="text-xl md:text-3xl font-bold text-yellow-400"><?= $user['level'] ?? 1 ?></h3>
         </div>
         <i class="bi bi-trophy text-2xl md:text-4xl text-yellow-400 hidden md:block"></i>
       </div>
@@ -348,7 +361,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       <div class="flex flex-col md:flex-row items-center md:justify-between text-center md:text-left">
         <div>
           <p class="text-gray-400 text-xs md:text-sm">Title</p>
-          <h3 class="text-xs md:text-lg font-bold text-purple-400 truncate"><?= htmlspecialchars($user['title']) ?></h3>
+          <h3 class="text-xs md:text-lg font-bold text-purple-400 truncate"><?= htmlspecialchars($user['title'] ?? 'Member') ?></h3>
         </div>
         <i class="bi bi-award text-2xl md:text-4xl text-purple-400 hidden md:block"></i>
       </div>
@@ -401,14 +414,14 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
             <?php else: ?>
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 
                 flex items-center justify-center text-base md:text-xl font-bold">
-                  <?= strtoupper(substr($post['username'], 0, 1)) ?>
+                  <?= strtoupper(substr($post['username'] ?? 'U', 0, 1)) ?>
               </div>
             <?php endif; ?>
             <div>
               <div class="font-bold text-sm md:text-lg"><?=htmlspecialchars($post['username'])?></div>
               <div class="flex items-center gap-1 md:gap-2 text-xs">
-                <span class="px-2 py-0.5 bg-purple-600/30 rounded-full"><?=htmlspecialchars($post['title'])?></span>
-                <span class="px-2 py-0.5 bg-yellow-500/30 rounded-full">Lvl <?= $post['level'] ?></span>
+                <span class="px-2 py-0.5 bg-purple-600/30 rounded-full"><?=htmlspecialchars($post['title'] ?? 'Member')?></span>
+                <span class="px-2 py-0.5 bg-yellow-500/30 rounded-full">Lvl <?= $post['level'] ?? 1 ?></span>
               </div>
             </div>
           </div>
