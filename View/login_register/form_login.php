@@ -63,16 +63,20 @@
             <div class="social-divider">
                 <span>atau</span>
             </div>
-
             <div class="social-buttons">
-                <a href="../../service/oauth/google_login.php" class="social-btn google" title="Login dengan Google">
-                    <i class="bi bi-google"></i> Google
-                </a>
-                <a href="../../service/oauth/facebook_login.php" class="social-btn facebook" title="Login dengan Facebook">
-                    <i class="bi bi-facebook"></i> Facebook
-                </a>
-            </div>
-
+            <a href="../../service/oauth/google_login.php" class="social-btn google" title="Login dengan Google">
+                <i class="bi bi-google"></i> Google
+            </a>
+            <a href="../../service/oauth/facebook_login.php" class="social-btn facebook" title="Login dengan Facebook">
+                <i class="bi bi-facebook"></i> Facebook
+            </a>
+            <a href="../../service/oauth/tiktok_login.php" class="social-btn tiktok" title="Login dengan TikTok">
+                <i class="bi bi-music-note-beamed"></i> TikTok
+            </a>
+            <a href="../../service/oauth/discord_login.php" class="social-btn discord" title="Login dengan Discord">
+                <i class="bi bi-discord"></i> Discord
+            </a>
+        </div>
             <p class="switch">
                 Belum punya akun?
                 <a href="form_register.php">Daftar di sini</a>

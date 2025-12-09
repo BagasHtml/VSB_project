@@ -1,35 +1,23 @@
 <?php
-/**
- * Facebook OAuth Login Handler
- * Redirects user to Facebook for authentication
- */
-
 session_start();
+require_once '../config/oauth.php';
+ $facebookConfig = $oauth['facebook'];
 
-$oauth = require 'config.oauth.php';
-$facebook = $oauth['facebook'];
+// Generate a random state parameter for security
+ $_SESSION['oauth_state'] = bin2hex(random_bytes(16));
 
-// Store redirect parameter if provided (login vs register)
-if (isset($_GET['redirect'])) {
-    $_SESSION['oauth_redirect'] = $_GET['redirect'];
-}
-
-// Generate state token for security (CSRF protection)
-$state = bin2hex(random_bytes(32));
-$_SESSION['oauth_state'] = $state;
-
-// Build authorization URL
-$params = [
-    'client_id' => $facebook['app_id'],
-    'redirect_uri' => $facebook['redirect_uri'],
-    'response_type' => 'code',
-    'state' => $state,
-    'scope' => 'email,public_profile'
+// Build the authorization URL
+ $params = [
+    'client_id' => $facebookConfig['app_id'],
+    'redirect_uri' => $facebookConfig['redirect_uri'],
+    'scope' => 'email',
+    'state' => $_SESSION['oauth_state'],
+    'response_type' => 'code'
 ];
 
-$auth_url = $facebook['auth_url'] . '?' . http_build_query($params);
+ $authUrl = 'https://www.facebook.com/v18.0/dialog/oauth?' . http_build_query($params);
 
-// Redirect to Facebook
-header('Location: ' . $auth_url);
-exit;
+// Redirect to Facebook's authorization page
+header('Location: ' . $authUrl);
+exit();
 ?>

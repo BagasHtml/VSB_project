@@ -7,14 +7,75 @@ if (!isset($_SESSION['user_id'])) {
   exit;
 }
 
-$user_id = $_SESSION['user_id'];
-$stmt = $conn->prepare("SELECT username, title, level FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+ $user_id = $_SESSION['user_id'];
+ $stmt = $conn->prepare("SELECT username, title, level, profile_pic FROM users WHERE id = ?");
+ $stmt->bind_param("i", $user_id);
+ $stmt->execute();
+ $user = $stmt->get_result()->fetch_assoc();
 
 // Check apakah user adalah developer/admin (level >= 50)
-$is_developer = ($user['level'] >= 50);
+ $is_developer = ($user['level'] >= 50);
+
+// Handle post update
+if(isset($_POST['update_post'])) {
+  $post_id = $_POST['post_id'];
+  $caption = $_POST['caption'];
+  $tags = $_POST['tags'] ?? '';
+  $image = $_FILES['image']['name'] ?? '';
+  $tmp = $_FILES['image']['tmp_name'] ?? '';
+  
+  // Verify ownership
+  $check = $conn->prepare("SELECT user_id, image FROM posts WHERE id = ?");
+  $check->bind_param("i", $post_id);
+  $check->execute();
+  $post = $check->get_result()->fetch_assoc();
+  
+  if($post && $post['user_id'] == $user_id) {
+    $old_image = $post['image'];
+    
+    if($image && move_uploaded_file($tmp, "../uploads/" . $image)){
+      // Delete old image if exists
+      if($old_image && file_exists("../uploads/" . $old_image)) {
+        unlink("../uploads/" . $old_image);
+      }
+      
+      $stmt = $conn->prepare("UPDATE posts SET image=?, caption=?, tags=? WHERE id=?");
+      $stmt->bind_param("sssi", $image, $caption, $tags, $post_id);
+    } else {
+      $stmt = $conn->prepare("UPDATE posts SET caption=?, tags=? WHERE id=?");
+      $stmt->bind_param("ssi", $caption, $tags, $post_id);
+    }
+    $stmt->execute();
+    
+    // Process mentions in updated caption
+    preg_match_all('/@(\w+)/', $caption, $mentions);
+    if(!empty($mentions[1])) {
+      foreach(array_unique($mentions[1]) as $mentioned) {
+        $check=$conn->prepare("SELECT id FROM users WHERE username=?");
+        $check->bind_param("s", $mentioned);
+        $check->execute();
+        $m_user=$check->get_result()->fetch_assoc();
+
+        if($m_user && $m_user['id'] != $user_id){
+          // Check if mention notification already exists
+          $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='mention'");
+          $notif_check->bind_param("iii", $m_user['id'], $user_id, $post_id);
+          $notif_check->execute();
+          
+          if($notif_check->get_result()->num_rows == 0) {
+            $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'mention', ?,?)");
+            $msg = $user['username']." mentioned you in a post";
+            $notif->bind_param("iiis", $m_user['id'], $user_id, $post_id, $msg);
+            $notif->execute();
+          }
+        }
+      }
+    }
+    
+    header("Location: halaman_utama.php"); 
+    exit;
+  }
+}
 
 if(isset($_POST['upload'])) {
   $caption = $_POST['caption'];
@@ -81,23 +142,24 @@ if(isset($_POST['like_post'])){
   header("Location: halaman_utama.php"); exit;
 }
 
-$posts = $conn->query("
+// Query dengan total comments termasuk replies
+ $posts = $conn->query("
   SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
-  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id AND parent_id IS NULL) AS comment_count,
+  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
   (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
   (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id AND user_id=$user_id) AS user_liked
   FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
 ");
 
-$notifs = $conn->query("
+ $notifs = $conn->query("
   SELECT n.*,u.username AS from_username
   FROM notifications n JOIN users u ON n.from_user_id=u.id
   WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
 ");
-$unread_count = $notifs->num_rows;
+ $unread_count = $notifs->num_rows;
 
-$users_list=[];
-$all=$conn->query("SELECT id,username FROM users ORDER BY username");
+ $users_list=[];
+ $all=$conn->query("SELECT id,username FROM users ORDER BY username");
 while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 ?>
 <!DOCTYPE html>
@@ -119,7 +181,58 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
   @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
   .float-animation { animation: float 3s ease-in-out infinite; }
   .notif-badge { animation: pulse 2s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @keyframes pulse { 
+    0%, 100% { opacity: 1; transform: scale(1); } 
+    50% { opacity: 0.8; transform: scale(1.05); } 
+  }
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  .pinned-badge {
+    background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 25%, #fcd34d 50%, #fbbf24 75%, #f59e0b 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s infinite linear;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .pinned-badge-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.625rem;
+    line-height: 1;
+  }
+  .pinned-badge-medium {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.8);
+    overflow-y: auto;
+  }
+  .modal.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .modal-content {
+    background: linear-gradient(to bottom right, #1f2937, #111827);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 1rem;
+    padding: 2rem;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
 </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white min-h-screen">
@@ -180,6 +293,14 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       </div>
 
       <div class="hidden md:flex items-center gap-2 glass px-3 py-2 rounded-full text-sm">
+        <?php if(!empty($user['profile_pic'])): ?>
+          <img src="../uploads/profile/<?= htmlspecialchars($user['profile_pic']) ?>" 
+               class="w-8 h-8 rounded-full object-cover border border-white/10">
+        <?php else: ?>
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-sm font-bold">
+            <?= strtoupper(substr($user['username'], 0, 1)) ?>
+          </div>
+        <?php endif; ?>
         <div class="font-semibold"><?= htmlspecialchars($user['username']) ?></div>
         <span class="px-2 py-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full text-xs"><?= htmlspecialchars($user['title']) ?></span>
         <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?></span>
@@ -271,13 +392,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       $caption = htmlspecialchars($post['caption']);
       $caption = preg_replace('/@(\w+)/', '<span class="mention">@$1</span>', $caption);
     ?>
-      <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition relative">
-        <?php if($post['is_pinned']): ?>
-          <div class="absolute top-3 right-3 md:top-4 md:right-4 bg-gradient-to-r from-yellow-500 to-amber-500 px-2 md:px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-            <i class="bi bi-pin-fill"></i>
-            <span>Pinned</span>
-          </div>
-        <?php endif; ?>
+      <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition relative <?= $post['is_pinned'] ? 'ring-2 ring-yellow-500/30' : '' ?>">
         <div class="flex justify-between items-start mb-3 md:mb-4">
           <div class="flex items-center gap-2 md:gap-3">
             <?php if(!empty($post['profile_pic'])): ?>
@@ -297,10 +412,18 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
               </div>
             </div>
           </div>
-          <div class="text-gray-400 text-xs md:text-sm flex items-center gap-1 md:gap-2">
-            <i class="bi bi-clock"></i>
-            <span class="hidden md:inline"><?=date('d M Y, H:i', strtotime($post['created_at']))?></span>
-            <span class="md:hidden"><?=date('d M', strtotime($post['created_at']))?></span>
+          <div class="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
+            <?php if($post['is_pinned']): ?>
+              <div class="pinned-badge pinned-badge-small md:pinned-badge-medium rounded-full font-bold text-gray-900 shadow-lg shadow-yellow-500/50">
+                <i class="bi bi-pin-angle-fill"></i>
+                <span class="hidden sm:inline">Pinned</span>
+              </div>
+            <?php endif; ?>
+            <div class="text-gray-400 flex items-center gap-1">
+              <i class="bi bi-clock"></i>
+              <span class="hidden md:inline"><?=date('d M Y, H:i', strtotime($post['created_at']))?></span>
+              <span class="md:hidden"><?=date('d M', strtotime($post['created_at']))?></span>
+            </div>
           </div>
         </div>
 
@@ -343,6 +466,15 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
             <span class="hidden md:inline">Share</span>
           </button>
           
+          <!-- Edit button untuk post sendiri -->
+          <?php if($post['user_id'] == $user_id): ?>
+            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, '<?= htmlspecialchars($post['caption']) ?>', '<?= htmlspecialchars($post['tags']) ?>', '<?= htmlspecialchars($post['image']) ?>')" 
+              class="flex items-center gap-1 md:gap-2 glass hover:bg-blue-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
+              <i class="bi bi-pencil"></i>
+              <span class="hidden md:inline">Edit</span>
+            </button>
+          <?php endif; ?>
+          
           <!-- Pin button untuk developer/admin -->
           <?php if($is_developer): ?>
             <button type="button" class="flex items-center gap-1 md:gap-2 glass hover:bg-yellow-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base pin-btn <?= $post['is_pinned'] ? 'text-yellow-400' : '' ?>" 
@@ -368,6 +500,51 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
   </div>
 
 </main>
+
+<!-- Edit Post Modal -->
+<div id="editModal" class="modal">
+  <div class="modal-content">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+        <i class="bi bi-pencil-square text-blue-500"></i>
+        Edit Thread
+      </h2>
+      <button onclick="closeEditModal()" class="text-gray-400 hover:text-white">
+        <i class="bi bi-x-lg text-xl"></i>
+      </button>
+    </div>
+    <form action="" method="post" enctype="multipart/form-data" class="flex flex-col gap-4">
+      <input type="hidden" id="edit_post_id" name="post_id">
+      
+      <div class="relative">
+        <textarea name="caption" id="edit_caption" placeholder="Tulis diskusi... (@ untuk mention)" 
+          class="w-full border border-white/10 p-3 md:p-4 rounded-xl bg-gray-900/50 focus:outline-none focus:border-blue-500 transition min-h-[100px] text-sm md:text-base" required></textarea>
+        <div id="edit-mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
+      </div>
+      
+      <div class="flex items-center gap-3 border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-blue-500 transition cursor-pointer text-sm md:text-base">
+        <i class="bi bi-image text-xl md:text-2xl text-blue-500"></i>
+        <span class="text-gray-400">Ganti Gambar (Optional)</span>
+        <input type="file" name="image" class="hidden" accept="image/*" id="edit_image_input">
+        <div id="current_image_info" class="text-xs text-gray-500"></div>
+      </div>
+      
+      <input type="text" name="tags" id="edit_tags" placeholder="#tag1 #tag2" 
+        class="border border-white/10 p-3 md:p-4 rounded-xl bg-gray-900/50 focus:outline-none focus:border-blue-500 transition text-sm md:text-base">
+      
+      <div class="flex gap-2">
+        <button type="submit" name="update_post" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 px-4 md:px-6 py-2 md:py-3 rounded-xl text-white font-semibold transition flex items-center justify-center gap-2 text-sm md:text-base">
+          <i class="bi bi-check-lg"></i>
+          Update
+        </button>
+        <button type="button" onclick="closeEditModal()" class="bg-gray-700 hover:bg-gray-600 px-4 md:px-6 py-2 md:py-3 rounded-xl text-white font-semibold transition flex items-center justify-center gap-2 text-sm md:text-base">
+          <i class="bi bi-x-lg"></i>
+          Batal
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script>
 // Pin/Unpin Handler
@@ -415,6 +592,30 @@ document.querySelectorAll('.pin-btn').forEach(btn => {
   });
 });
 
+// Edit Modal Functions
+function openEditModal(postId, caption, tags, image) {
+  document.getElementById('edit_post_id').value = postId;
+  document.getElementById('edit_caption').value = caption;
+  document.getElementById('edit_tags').value = tags;
+  
+  if(image) {
+    document.getElementById('current_image_info').textContent = 'Gambar saat ini: ' + image;
+  } else {
+    document.getElementById('current_image_info').textContent = 'Tidak ada gambar';
+  }
+  
+  document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('active');
+}
+
+// Image upload trigger
+document.querySelector('.border-dashed').addEventListener('click', function() {
+  document.getElementById('edit_image_input').click();
+});
+
 // Notification toggle
 function toggleNotif() {
   const dropdown = document.getElementById('notif-dropdown');
@@ -447,7 +648,7 @@ fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&curr
     document.getElementById('temp').textContent = '28°C';
   });
 
-// Mention autocomplete
+// Mention autocomplete for main form
 const usersList = <?= json_encode($users_list) ?>;
 const textarea = document.getElementById('caption');
 const dropdown = document.getElementById('mention-dropdown');
@@ -477,6 +678,35 @@ textarea.addEventListener('input', function(e) {
   }
 });
 
+// Mention autocomplete for edit form
+const editTextarea = document.getElementById('edit_caption');
+const editDropdown = document.getElementById('edit-mention-dropdown');
+
+editTextarea.addEventListener('input', function(e) {
+  const text = this.value;
+  const cursorPos = this.selectionStart;
+  const textBeforeCursor = text.substring(0, cursorPos);
+  const match = textBeforeCursor.match(/@(\w*)$/);
+  
+  if(match) {
+    const query = match[1].toLowerCase();
+    const filtered = usersList.filter(u => u.username.toLowerCase().startsWith(query));
+    
+    if(filtered.length > 0) {
+      editDropdown.innerHTML = filtered.map(u => 
+        `<div class="p-2 hover:bg-white/10 rounded cursor-pointer" onclick="insertEditMention('${u.username}')">
+          @${u.username}
+        </div>`
+      ).join('');
+      editDropdown.classList.remove('hidden');
+    } else {
+      editDropdown.classList.add('hidden');
+    }
+  } else {
+    editDropdown.classList.add('hidden');
+  }
+});
+
 function insertMention(username) {
   const text = textarea.value;
   const cursorPos = textarea.selectionStart;
@@ -490,44 +720,26 @@ function insertMention(username) {
   dropdown.classList.add('hidden');
 }
 
+function insertEditMention(username) {
+  const text = editTextarea.value;
+  const cursorPos = editTextarea.selectionStart;
+  const textBeforeCursor = text.substring(0, cursorPos);
+  const textAfterCursor = text.substring(cursorPos);
+  const newTextBefore = textBeforeCursor.replace(/@\w*$/, '@' + username + ' ');
+  
+  editTextarea.value = newTextBefore + textAfterCursor;
+  editTextarea.focus();
+  editTextarea.selectionStart = editTextarea.selectionEnd = newTextBefore.length;
+  editDropdown.classList.add('hidden');
+}
+
 document.addEventListener('click', function(e) {
   if(!textarea.contains(e.target) && !dropdown.contains(e.target)) {
     dropdown.classList.add('hidden');
   }
-});
-
-fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&current_weather=true')
-  .then(r => r.json())
-  .then(data => {
-    document.getElementById('temp').textContent = Math.round(data.current_weather.temperature) + '°C';
-  })
-  .catch(error => console.log("Gagal memuat cuaca", error));
-
-const captionInput = document.getElementById("caption");
-const mentionBox = document.getElementById("mention-dropdown");
-
-let users = <?php echo json_encode($users_list); ?>;
-
-captionInput.addEventListener("keyup", () => {
-    const val = captionInput.value;
-    const trigger = val.match(/@(\w*)$/);
-
-    if(trigger){
-        const search = trigger[1].toLowerCase();
-        const filtered = users.filter(u => u.username.toLowerCase().includes(search));
-
-        if(filtered.length){
-            mentionBox.innerHTML = filtered.map(u=>`<div class="mention-item p-2 hover:bg-white/10 rounded cursor-pointer">@${u.username}</div>`).join("");
-            mentionBox.classList.remove("hidden");
-
-            document.querySelectorAll(".mention-item").forEach(item=>{
-                item.onclick = ()=>{
-                    captionInput.value = val.replace(/@\w*$/, item.textContent + " ");
-                    mentionBox.classList.add("hidden");
-                }
-            });
-        } else mentionBox.classList.add("hidden");
-    } else mentionBox.classList.add("hidden");
+  if(!editTextarea.contains(e.target) && !editDropdown.contains(e.target)) {
+    editDropdown.classList.add('hidden');
+  }
 });
 </script>
 </body>

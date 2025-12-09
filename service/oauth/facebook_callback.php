@@ -1,178 +1,95 @@
 <?php
-/**
- * Facebook OAuth Callback Handler
- * Processes Facebook's authorization response and logs user in
- */
-
 session_start();
-header('Content-Type: application/json');
-include '../db.php';
+require_once '../config/oauth.php';
+require_once '../db.php';
 
-$oauth = require 'config.oauth.php';
-$facebook = $oauth['facebook'];
-
-// Validate state token (CSRF protection)
-if (!isset($_GET['state']) || $_GET['state'] !== ($_SESSION['oauth_state'] ?? '')) {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'Invalid state token']));
+// Verify the state parameter to prevent CSRF attacks
+if (!isset($_GET['state']) || $_GET['state'] !== $_SESSION['oauth_state']) {
+    header('Location: ../View/login_register/form_login.php?error=invalid_oauth_state');
+    exit();
 }
 
-// Check for errors from Facebook
-if (isset($_GET['error'])) {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'Facebook login failed: ' . $_GET['error']]));
-}
-
-// Check for authorization code
-if (!isset($_GET['code'])) {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'No authorization code received']));
-}
-
-$code = $_GET['code'];
-
-// Exchange code for access token
-$token_params = [
-    'client_id' => $facebook['app_id'],
-    'client_secret' => $facebook['app_secret'],
-    'code' => $code,
-    'redirect_uri' => $facebook['redirect_uri']
+// Exchange authorization code for access token
+ $tokenUrl = 'https://graph.facebook.com/v18.0/oauth/access_token';
+ $params = [
+    'code' => $_GET['code'],
+    'client_id' => $oauth['facebook']['app_id'],
+    'client_secret' => $oauth['facebook']['app_secret'],
+    'redirect_uri' => $oauth['facebook']['redirect_uri']
 ];
 
-$ch = curl_init($facebook['token_url']);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($token_params));
+ $ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $tokenUrl . '?' . http_build_query($params));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+ $response = curl_exec($ch);
 curl_close($ch);
 
-if ($httpCode !== 200) {
-    http_response_code(500);
-    die(json_encode(['success' => false, 'message' => 'Failed to get access token']));
-}
-
-$tokenData = json_decode($response, true);
+ $tokenData = json_decode($response, true);
 
 if (!isset($tokenData['access_token'])) {
-    http_response_code(500);
-    die(json_encode(['success' => false, 'message' => 'No access token in response']));
+    header('Location: ../View/login_register/form_login.php?error=token_exchange_failed');
+    exit();
 }
 
-// Get user info from Facebook
-$userinfo_url = $facebook['userinfo_url'] . '?fields=' . urlencode($facebook['fields']) . '&access_token=' . $tokenData['access_token'];
-
-$ch = curl_init($userinfo_url);
+// Get user information
+ $userUrl = 'https://graph.facebook.com/me?fields=id,name,email,picture&access_token=' . $tokenData['access_token'];
+ $ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $userUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-$userinfo = curl_exec($ch);
+ $response = curl_exec($ch);
 curl_close($ch);
 
-$userData = json_decode($userinfo, true);
+ $userData = json_decode($response, true);
 
-if (!isset($userData['email']) || !isset($userData['id'])) {
-    http_response_code(400);
-    die(json_encode(['success' => false, 'message' => 'Could not get email from Facebook']));
+if (!isset($userData['id'])) {
+    header('Location: ../View/login_register/form_login.php?error=user_info_failed');
+    exit();
 }
 
-$email = $userData['email'];
-$name = $userData['name'] ?? 'User';
-$picture = $userData['picture']['data']['url'] ?? null;
-$oauth_id = 'facebook_' . $userData['id'];
+// Process user data
+processOAuthUser($userData, 'facebook', $userData['id']);
 
-// Check if user exists
-$check_stmt = $conn->prepare("SELECT id, username FROM users WHERE email = ? OR oauth_id = ?");
-$check_stmt->bind_param("ss", $email, $oauth_id);
-$check_stmt->execute();
-$result = $check_stmt->get_result();
+// Redirect to dashboard
+header('Location: ../halaman_utama.php');
+exit();
 
-if ($result->num_rows > 0) {
-    // User exists - login
-    $user = $result->fetch_assoc();
-    $user_id = $user['id'];
+function processOAuthUser($userData, $provider, $providerId) {
+    global $conn;
     
-    // Update OAuth ID if not set
-    $update_stmt = $conn->prepare("UPDATE users SET oauth_id = ?, oauth_provider = 'facebook' WHERE id = ?");
-    $update_stmt->bind_param("si", $oauth_id, $user_id);
-    $update_stmt->execute();
+    // Check if user exists by provider ID
+    $stmt = $conn->prepare("SELECT id FROM users WHERE {$provider}_id = ?");
+    $stmt->bind_param("s", $providerId);
+    $stmt->execute();
+    $result = $stmt->get_result();
     
-} else {
-    // New user - create account
-    // Generate username from email
-    $username = explode('@', $email)[0];
-    
-    // Check if username exists and generate unique one
-    $check_user_stmt = $conn->prepare("SELECT id FROM users WHERE username = ?");
-    $counter = 1;
-    $original_username = $username;
-    
-    while (true) {
-        $check_user_stmt->bind_param("s", $username);
-        $check_user_stmt->execute();
+    if ($result->num_rows > 0) {
+        // User exists, log them in
+        $user = $result->fetch_assoc();
+        $_SESSION['user_id'] = $user['id'];
+    } else {
+        // Check if user exists by email
+        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt->bind_param("s", $userData['email']);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        if ($check_user_stmt->get_result()->num_rows === 0) {
-            break;
-        }
-        
-        $username = $original_username . $counter;
-        $counter++;
-    }
-    
-    // Generate random password (won't be used since auth via OAuth)
-    $password = password_hash(bin2hex(random_bytes(32)), PASSWORD_BCRYPT);
-    $created_at = date('Y-m-d H:i:s');
-    $is_verified = 1; // Email verified via Facebook
-    
-    $insert_stmt = $conn->prepare("INSERT INTO users (email, username, password, oauth_id, oauth_provider, is_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    
-    $provider = 'facebook';
-    $insert_stmt->bind_param("sssssss", $email, $username, $password, $oauth_id, $provider, $is_verified, $created_at);
-    
-    if (!$insert_stmt->execute()) {
-        http_response_code(500);
-        die(json_encode(['success' => false, 'message' => 'Failed to create account']));
-    }
-    
-    $user_id = $conn->insert_id;
-    
-    // Download and save profile picture if available
-    if ($picture) {
-        $upload_dir = __DIR__ . '/../../uploads/profile/';
-        
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0755, true);
-        }
-        
-        $filename = 'profile_' . $user_id . '.jpg';
-        $filepath = $upload_dir . $filename;
-        
-        $image = file_get_contents($picture);
-        if ($image && file_put_contents($filepath, $image)) {
-            // Update user with picture filename
-            $pic_stmt = $conn->prepare("UPDATE users SET profile_picture = ? WHERE id = ?");
-            $pic_stmt->bind_param("si", $filename, $user_id);
-            $pic_stmt->execute();
+        if ($result->num_rows > 0) {
+            // Update existing user with provider ID
+            $user = $result->fetch_assoc();
+            $updateStmt = $conn->prepare("UPDATE users SET {$provider}_id = ?, avatar_url = ?, login_provider = ? WHERE id = ?");
+            $avatarUrl = isset($userData['picture']['data']['url']) ? $userData['picture']['data']['url'] : '';
+            $updateStmt->bind_param("sssi", $providerId, $avatarUrl, $provider, $user['id']);
+            $updateStmt->execute();
+            $_SESSION['user_id'] = $user['id'];
+        } else {
+            // Create new user
+            $insertStmt = $conn->prepare("INSERT INTO users (username, email, {$provider}_id, avatar_url, login_provider, title, level) VALUES (?, ?, ?, ?, ?, 'Member', 1)");
+            $username = $userData['name'];
+            $avatarUrl = isset($userData['picture']['data']['url']) ? $userData['picture']['data']['url'] : '';
+            $insertStmt->bind_param("sssss", $username, $userData['email'], $providerId, $avatarUrl, $provider);
+            $insertStmt->execute();
+            $_SESSION['user_id'] = $conn->insert_id;
         }
     }
 }
-
-// Set session
-$_SESSION['user_id'] = $user_id;
-$_SESSION['email'] = $email;
-
-// Determine redirect
-$redirect = $_SESSION['oauth_redirect'] ?? 'login';
-unset($_SESSION['oauth_redirect']);
-unset($_SESSION['oauth_state']);
-
-// Redirect based on flow
-if ($redirect === 'register') {
-    header('Location: ../../View/halaman_utama.php?success=oauth_registration');
-} else {
-    header('Location: ../../View/halaman_utama.php?success=oauth_login');
-}
-
 ?>

@@ -722,3 +722,64 @@ body::before {
         font-size: 14px;
     }
 }
+
+.social-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.social-btn {
+    flex: 1;
+    min-width: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.social-btn i {
+    font-size: 1.2rem;
+}
+
+.social-btn.google {
+    background-color: #ea4335;
+    color: white;
+}
+
+.social-btn.google:hover {
+    background-color: #d33b2c;
+}
+
+.social-btn.facebook {
+    background-color: #1877f2;
+    color: white;
+}
+
+.social-btn.facebook:hover {
+    background-color: #166fe5;
+}
+
+.social-btn.tiktok {
+    background-color: #000000;
+    color: white;
+}
+
+.social-btn.tiktok:hover {
+    background-color: #333333;
+}
+
+.social-btn.discord {
+    background-color: #7289da;
+    color: white;
+}
+
+.social-btn.discord:hover {
+    background-color: #5a6eb8;
+}

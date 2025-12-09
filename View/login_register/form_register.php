@@ -369,8 +369,7 @@ document.querySelector('#step-otp form')?.addEventListener('submit', async (e) =
         inputs[0].focus();
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-circle"></i> Verifikasi OTP';
-    }
-});
+    };
 
 // Resend OTP
 document.getElementById('resend-btn')?.addEventListener('click', async (e) => {
