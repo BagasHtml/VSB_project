@@ -619,6 +619,50 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     }
   });
 });
+
+// Search functionality for users
+document.getElementById('search-user').addEventListener('keyup', function(e) {
+  const query = this.value.toLowerCase();
+  const rows = document.querySelectorAll('#user-table-body tr');
+  
+  rows.forEach(row => {
+    const username = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+    const email = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+    
+    if (username.includes(query) || email.includes(query)) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+});
+
+// Search functionality for posts
+document.getElementById('search-post').addEventListener('keyup', function() {
+  const query = this.value.toLowerCase();
+  const rows = document.querySelectorAll('#post-table-body tr');
+  
+  rows.forEach(row => {
+    const caption = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+    const author = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+    
+    if (caption.includes(query) || author.includes(query)) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+});
+
+function togglePin(postId, btn) {
+  fetch(`toggle_pin.php?id=${postId}`)
+    .then(response => response.text())
+    .then(result => {
+      if(result === 'success'){
+        location.reload(); // update tampilan otomatis
+      }
+    });
+}
 </script>
 
 </body>

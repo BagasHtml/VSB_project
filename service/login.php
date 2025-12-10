@@ -1,72 +1,133 @@
 <?php
+// ============================================
+// LOGIN LOGIC (process_login.php)
+// ============================================
 session_start();
 include 'db.php';
 
-// Rate limiting - prevent DDoS/brute force attacks
+$response = [
+    'success' => false,
+    'message' => '',
+    'type' => 'error'
+];
+
+// Hanya menerima POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
 $ip = $_SERVER['REMOTE_ADDR'];
-$rate_limit_key = "login_attempts_" . $ip;
-$rate_limit_time = "login_attempts_time_" . $ip;
+$rate_key = "login_attempts_" . $ip;
+$time_key = "login_attempts_time_" . $ip;
 
-// Check rate limiting
-if (isset($_SESSION[$rate_limit_key])) {
-    if ($_SESSION[$rate_limit_key] >= 5) {
-        // Check if 15 minutes have passed
-        if (isset($_SESSION[$rate_limit_time])) {
-            $time_diff = time() - $_SESSION[$rate_limit_time];
-            if ($time_diff < 900) { // 15 minutes = 900 seconds
-                header("Location: ../View/login_register/form_login.php?error=rate_limit");
-                exit();
-            } else {
-                // Reset after 15 minutes
-                $_SESSION[$rate_limit_key] = 0;
-                $_SESSION[$rate_limit_time] = time();
-            }
-        }
-    }
-} else {
-    $_SESSION[$rate_limit_key] = 0;
-    $_SESSION[$rate_limit_time] = time();
+if (!isset($_SESSION[$rate_key])) {
+    $_SESSION[$rate_key] = 0;
+    $_SESSION[$time_key] = time();
 }
 
-if(isset($_POST['email'], $_POST['password'])) {
-    $email = trim($_POST['email']);
-    $password = $_POST['password'];
+$current_time = time();
+$rate_limit_window = 900; // 15 menit
+$max_attempts = 5;
 
-    // Validate email format
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        header("Location: ../View/login_register/form_login.php?error=invalid");
-        exit();
-    }
-
-    $stmt = $conn->prepare("SELECT id, username, password, email FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if($user = $result->fetch_assoc()) {
-        if(password_verify($password, $user['password'])) {
-            $_SESSION[$rate_limit_key] = 0;
-            
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            
-            // Update last login time (optional)
-            $update_login = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-            $update_login->bind_param("i", $user['id']);
-            $update_login->execute();
-            
-            header("Location: ../View/halaman_utama.php");
-            exit();
-        } else {
-            // Increment failed attempts
-            $_SESSION[$rate_limit_key]++;
-            header("Location: ../View/login_register/form_login.php?error=invalid");
-            exit();
-        }
-    } else {
-        $_SESSION[$rate_limit_key]++;
-        header("Location: ../View/login_register/form_login.php?error=invalid");
-        exit();
-    }
+if ($current_time - $_SESSION[$time_key] >= $rate_limit_window) {
+    $_SESSION[$rate_key] = 0;
+    $_SESSION[$time_key] = $current_time;
 }
+
+if ($_SESSION[$rate_key] >= $max_attempts) {
+    $response['message'] = 'Terlalu banyak percobaan login gagal. Coba lagi 15 menit.';
+    $response['type'] = 'warning';
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// ============================================
+// VALIDASI INPUT
+// ============================================
+$email = trim($_POST['email'] ?? '');
+$password = $_POST['password'] ?? '';
+$errors = [];
+
+if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors[] = 'Email tidak valid';
+}
+if ($password === '') {
+    $errors[] = 'Password tidak boleh kosong';
+}
+
+if ($errors) {
+    $response['message'] = implode(' | ', $errors);
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// ============================================
+// GET USER (WAJIB TAMBAH role !!!)
+// ============================================
+$stmt = $conn->prepare("SELECT id, username, password, is_verified, role FROM users WHERE email = ?");
+$stmt->bind_param("s", $email);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$user) {
+    $_SESSION[$rate_key]++;
+    $_SESSION[$time_key] = $current_time;
+    $response['message'] = 'Email atau password salah.';
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// akun belum diverifikasi
+if (!$user['is_verified']) {
+    $_SESSION['last_login_email'] = $email;
+    $response['message'] = 'Akun belum diverifikasi. Periksa email Anda.';
+    $response['type'] = 'warning';
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// password salah
+if (!password_verify($password, $user['password'])) {
+    $_SESSION[$rate_key]++;
+    $_SESSION[$time_key] = $current_time;
+    $response['message'] = 'Email atau password salah.';
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
+
+// ============================================
+// LOGIN SUCCESS
+// ============================================
+$_SESSION[$rate_key] = 0;
+unset($_SESSION[$time_key]);
+
+// SET SESSION (role now valid)
+$_SESSION['user_id']  = $user['id'];
+$_SESSION['username'] = $user['username'];
+$_SESSION['role']     = $user['role'];  // FIX HERE !!!
+
+// Update last login
+$update = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+$update->bind_param("i", $user['id']);
+$update->execute();
+$update->close();
+
+$conn->close();
+
+unset($_SESSION['form_response']);
+
+// redirect ke dashboard
+header("Location: ../View/halaman_utama.php");
+exit;
 ?>

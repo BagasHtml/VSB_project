@@ -63,11 +63,11 @@
       
       <!-- CTA Buttons -->
       <div class="hidden md:flex gap-3">
-        <a href="../View/login_register/form_login.php" 
+        <a href="View/login_register/form_login.php" 
            class="px-6 py-2.5 rounded-xl glass hover:bg-white/10 text-white font-semibold transition-all duration-300 hover:scale-105">
           Masuk
         </a>
-        <a href="../View/login_register/form_register.php" 
+        <a href="View/login_register/form_register.php" 
            class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold transition-all duration-300 hover:scale-105 shadow-lg shadow-red-600/30">
           Daftar Sekarang
         </a>
@@ -90,11 +90,11 @@
         <a href="#fitur" class="px-4 py-3 rounded-lg hover:bg-white/5 text-gray-300 hover:text-white font-medium transition">Fitur</a>
         <a href="#kontak" class="px-4 py-3 rounded-lg hover:bg-white/5 text-gray-300 hover:text-white font-medium transition">Kontak</a>
         <div class="h-px bg-white/10 my-2"></div>
-        <a href="../View/login_register/form_login.php" 
+        <a href="View/login_register/form_login.php" 
            class="px-4 py-3 rounded-lg glass hover:bg-white/10 text-white font-semibold text-center transition">
           Masuk
         </a>
-        <a href="../View/login_register/form_register.php" 
+        <a href="View/login_register/form_register.php" 
            class="px-4 py-3 rounded-lg bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold text-center transition hover:from-red-500 hover:to-red-600">
           Daftar Sekarang
         </a>
@@ -127,7 +127,7 @@
       </p>
       
       <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-        <a href="../View/login_register/form_register.php" 
+        <a href="View/login_register/form_register.php" 
            class="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-lg transition-all duration-300 hover:scale-105 shadow-2xl shadow-red-600/30">
           Mulai Sekarang →
         </a>
@@ -313,7 +313,7 @@
         <p class="text-lg text-gray-400 mb-10 leading-relaxed">
           Daftar sekarang dan mulai petualangan diskusi anime-mu bersama ribuan pengguna lainnya!
         </p>
-        <a href="../View/login_register/form_register.php" 
+        <a href="View/login_register/form_register.php" 
            class="inline-block px-10 py-5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-lg transition-all duration-300 hover:scale-105 shadow-2xl shadow-red-600/30">
           <i class="bi bi-person-plus-fill mr-2"></i>Daftar Gratis Sekarang →
         </a>

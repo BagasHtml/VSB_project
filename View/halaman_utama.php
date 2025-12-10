@@ -2,7 +2,6 @@
 session_start();
 include '../service/db.php';
 
-// PERBAIKAN: Cek koneksi database
 if ($conn->connect_error) {
     die("Koneksi database gagal: " . $conn->connect_error);
 }
@@ -12,24 +11,20 @@ if (!isset($_SESSION['user_id'])) {
   exit;
 }
 
- $user_id = $_SESSION['user_id'];
- $stmt = $conn->prepare("SELECT username, title, level, profile_pic FROM users WHERE id = ?");
- $stmt->bind_param("i", $user_id);
- $stmt->execute();
- $user = $stmt->get_result()->fetch_assoc();
+$user_id = $_SESSION['user_id'];
+$stmt = $conn->prepare("SELECT username, title, level, profile_pic FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
 
-// PERBAIKAN UTAMA: Cek apakah user benar-benar ada di database
 if (!$user) {
-    // Jika user tidak ada, hancurkan sesi dan redirect ke halaman login
     session_destroy();
     header("Location: login_register/form_login.php?error=user_not_found");
     exit;
 }
 
-// Check apakah user adalah developer/admin (level >= 50)
- $is_developer = ($user['level'] >= 50);
+$is_developer = ($user['level'] >= 50);
 
-// Handle post update
 if(isset($_POST['update_post'])) {
   $post_id = $_POST['post_id'];
   $caption = $_POST['caption'];
@@ -37,7 +32,6 @@ if(isset($_POST['update_post'])) {
   $image = $_FILES['image']['name'] ?? '';
   $tmp = $_FILES['image']['tmp_name'] ?? '';
   
-  // Verify ownership
   $check = $conn->prepare("SELECT user_id, image FROM posts WHERE id = ?");
   $check->bind_param("i", $post_id);
   $check->execute();
@@ -47,7 +41,6 @@ if(isset($_POST['update_post'])) {
     $old_image = $post['image'];
     
     if($image && move_uploaded_file($tmp, "../uploads/" . $image)){
-      // Delete old image if exists
       if($old_image && file_exists("../uploads/" . $old_image)) {
         unlink("../uploads/" . $old_image);
       }
@@ -60,7 +53,6 @@ if(isset($_POST['update_post'])) {
     }
     $stmt->execute();
     
-    // Process mentions in updated caption
     preg_match_all('/@(\w+)/', $caption, $mentions);
     if(!empty($mentions[1])) {
       foreach(array_unique($mentions[1]) as $mentioned) {
@@ -70,7 +62,6 @@ if(isset($_POST['update_post'])) {
         $m_user=$check->get_result()->fetch_assoc();
 
         if($m_user && $m_user['id'] != $user_id){
-          // Check if mention notification already exists
           $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='mention'");
           $notif_check->bind_param("iii", $m_user['id'], $user_id, $post_id);
           $notif_check->execute();
@@ -155,8 +146,14 @@ if(isset($_POST['like_post'])){
   header("Location: halaman_utama.php"); exit;
 }
 
-// Query dengan total comments termasuk replies
- $posts = $conn->query("
+if(isset($_GET['read_notif'])) {
+  $notif_id = $_GET['read_notif'];
+  $update = $conn->prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?");
+  $update->bind_param("ii", $notif_id, $user_id);
+  $update->execute();
+}
+
+$posts = $conn->query("
  SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
@@ -164,15 +161,15 @@ if(isset($_POST['like_post'])){
  FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
 ");
 
- $notifs = $conn->query("
+$notifs = $conn->query("
  SELECT n.*,u.username AS from_username
  FROM notifications n JOIN users u ON n.from_user_id=u.id
  WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
 ");
- $unread_count = $notifs->num_rows;
+$unread_count = $notifs->num_rows;
 
- $users_list=[];
- $all=$conn->query("SELECT id,username FROM users ORDER BY username");
+$users_list=[];
+$all=$conn->query("SELECT id,username FROM users ORDER BY username");
 while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 ?>
 <!DOCTYPE html>
@@ -246,6 +243,29 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     max-height: 90vh;
     overflow-y: auto;
   }
+  @media (max-width: 640px) {
+    .modal-content {
+      padding: 1.5rem;
+    }
+  }
+  .image-preview {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.75rem;
+  }
+  .share-toast {
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from {
+      transform: translateY(100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white min-h-screen">
@@ -257,7 +277,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       <span class="text-gray-100">Knowledge</span><span class="gradient-text">Battle</span>
     </div>
     
-    <!-- Weather & Time - Hidden on mobile -->
+    <!-- Weather & Time -->
     <div class="hidden lg:flex items-center gap-4 glass px-4 py-2 rounded-full text-sm">
       <div id="weather" class="flex items-center gap-2">
         <i class="bi bi-cloud-sun text-yellow-400"></i>
@@ -271,6 +291,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     </div>
 
     <div class="flex gap-2 items-center">
+      <!-- Notifications -->
       <div class="relative">
         <button onclick="toggleNotif()" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 relative">
           <i class="bi bi-bell text-lg"></i>
@@ -288,7 +309,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </h3>
           <?php if($notifs->num_rows > 0): ?>
             <?php while($notif = $notifs->fetch_assoc()): ?>
-              <a href="<?= $notif['post_id'] ? 'comments.php?post_id='.$notif['post_id'] : '#' ?>&read_notif=<?= $notif['id'] ?>" 
+              <a href="comments.php?post_id=<?= $notif['post_id'] ?>&read_notif=<?= $notif['id'] ?>" 
                  class="block p-3 hover:bg-white/10 rounded-xl mb-2 transition">
                 <div class="flex items-start gap-2">
                   <i class="bi bi-<?= $notif['type'] == 'mention' ? 'at' : ($notif['type'] == 'like' ? 'heart-fill text-red-500' : 'chat-dots') ?> mt-1"></i>
@@ -305,6 +326,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         </div>
       </div>
 
+      <!-- Desktop Profile -->
       <div class="hidden md:flex items-center gap-2 glass px-3 py-2 rounded-full text-sm">
         <?php if(!empty($user['profile_pic'])): ?>
           <img src="../uploads/profile/<?= htmlspecialchars($user['profile_pic']) ?>" 
@@ -319,13 +341,20 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?? 1 ?></span>
       </div>
 
-      <div class="md:hidden w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-sm font-bold">
-        <?= strtoupper(substr($user['username'] ?? 'U', 0, 1)) ?>
+      <!-- Mobile Profile Picture -->
+      <div class="md:hidden">
+        <?php if(!empty($user['profile_pic'])): ?>
+          <img src="../uploads/profile/<?= htmlspecialchars($user['profile_pic']) ?>" 
+               class="w-10 h-10 rounded-full object-cover border-2 border-red-500 shadow-lg shadow-red-500/30">
+        <?php else: ?>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 via-purple-600 to-pink-600 flex items-center justify-center text-sm font-bold border-2 border-white/20 shadow-lg shadow-red-500/30">
+            <?= strtoupper(substr($user['username'] ?? 'U', 0, 1)) ?>
+          </div>
+        <?php endif; ?>
       </div>
 
-      <a href="index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
+      <a href="../index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
         <i class="bi bi-box-arrow-right"></i>
-        <span class="hidden md:inline">Logout</span>
       </a>
       
       <a href="settings.php" class="glass hover:bg-blue-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
@@ -337,7 +366,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 
 <main class="pt-20 pb-12 max-w-5xl mx-auto px-3 md:px-4">
 
-  <!-- Stats Cards - Mobile Responsive -->
+  <!-- Stats Cards -->
   <div class="grid grid-cols-3 gap-2 md:gap-4 mb-6 md:mb-8">
     <div class="glass p-3 md:p-6 rounded-xl md:rounded-2xl hover:scale-105 transition float-animation">
       <div class="flex flex-col md:flex-row items-center md:justify-between text-center md:text-left">
@@ -368,7 +397,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     </div>
   </div>
 
-  <!-- Form Upload Thread - Mobile Responsive -->
+  <!-- Form Upload Thread -->
   <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl mb-6 md:mb-8 hover:border-red-500/50 transition">
     <h2 class="text-lg md:text-2xl font-bold mb-4 md:mb-6 flex items-center gap-2">
       <i class="bi bi-plus-circle text-red-500"></i>
@@ -381,11 +410,14 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <div id="mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
       </div>
       
-      <label class="flex items-center gap-3 border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-red-500 transition cursor-pointer text-sm md:text-base">
-        <i class="bi bi-image text-xl md:text-2xl text-red-500"></i>
-        <span class="text-gray-400">Upload Gambar (Optional)</span>
-        <input type="file" name="image" class="hidden" accept="image/*">
-      </label>
+      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-red-500 transition cursor-pointer text-sm md:text-base upload-box">
+        <div class="flex items-center gap-2">
+          <i class="bi bi-image text-xl md:text-2xl text-red-500"></i>
+          <span class="text-gray-400">Upload Gambar (Optional)</span>
+        </div>
+        <input type="file" name="image" class="hidden upload-input" accept="image/*" id="main_image_input">
+        <div id="main_image_preview" class="mt-2"></div>
+      </div>
       
       <input type="text" name="tags" placeholder="#tag1 #tag2" 
         class="border border-white/10 p-3 md:p-4 rounded-xl bg-gray-900/50 focus:outline-none focus:border-red-500 transition text-sm md:text-base">
@@ -397,7 +429,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     </form>
   </div>
 
-  <!-- Threads List - Mobile Responsive -->
+  <!-- Threads List -->
   <div class="space-y-4 md:space-y-6">
     <?php 
     $posts->data_seek(0);
@@ -412,8 +444,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
               <img src="../uploads/profile/<?= htmlspecialchars($post['profile_pic']) ?>" 
                 class="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-white/10">
             <?php else: ?>
-              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 
-                flex items-center justify-center text-base md:text-xl font-bold">
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-base md:text-xl font-bold">
                   <?= strtoupper(substr($post['username'] ?? 'U', 0, 1)) ?>
               </div>
             <?php endif; ?>
@@ -441,7 +472,10 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         </div>
 
         <?php if($post['image']): ?>
-          <img src="../uploads/<?=htmlspecialchars($post['image'])?>" class="w-full rounded-xl md:rounded-2xl mb-3 md:mb-4 hover:scale-[1.02] transition">
+          <div class="mb-3 md:mb-4">
+            <img src="../uploads/<?=htmlspecialchars($post['image'])?>" class="w-full rounded-xl md:rounded-2xl hover:scale-[1.02] transition">
+            <p class="text-xs text-gray-400 mt-2 px-1 flex items-center gap-1"><i class="bi bi-image"></i> <?=htmlspecialchars($post['image'])?></p>
+          </div>
         <?php endif; ?>
 
         <p class="text-gray-200 mb-3 md:mb-4 leading-relaxed text-sm md:text-base"><?=$caption?></p>
@@ -460,7 +494,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           <?php endforeach; ?>
         </div>
 
-        <!-- Actions - Mobile Responsive -->
+        <!-- Actions -->
         <div class="flex items-center gap-2 md:gap-4 pt-3 md:pt-4 border-t border-white/10 flex-wrap">
           <a href="comments.php?post_id=<?= $post['id'] ?>" 
             class="flex items-center gap-1 md:gap-2 glass hover:bg-red-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
@@ -474,21 +508,19 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
               <span><?= $post['like_count'] ?></span>
             </button>
           </form>
-          <button class="flex items-center gap-1 md:gap-2 glass hover:bg-green-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
+          <button type="button" onclick="sharePost(<?= $post['id'] ?>)" class="flex items-center gap-1 md:gap-2 glass hover:bg-blue-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
             <i class="bi bi-share"></i>
             <span class="hidden md:inline">Share</span>
           </button>
           
-          <!-- Edit button untuk post sendiri -->
           <?php if($post['user_id'] == $user_id): ?>
-            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, '<?= htmlspecialchars($post['caption']) ?>', '<?= htmlspecialchars($post['tags']) ?>', '<?= htmlspecialchars($post['image']) ?>')" 
+            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, `<?= str_replace('`', '\`', htmlspecialchars($post['caption'])) ?>`, `<?= htmlspecialchars($post['tags']) ?>`, '<?= htmlspecialchars($post['image']) ?>')" 
               class="flex items-center gap-1 md:gap-2 glass hover:bg-blue-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
               <i class="bi bi-pencil"></i>
               <span class="hidden md:inline">Edit</span>
             </button>
           <?php endif; ?>
           
-          <!-- Pin button untuk developer/admin -->
           <?php if($is_developer): ?>
             <button type="button" class="flex items-center gap-1 md:gap-2 glass hover:bg-yellow-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base pin-btn <?= $post['is_pinned'] ? 'text-yellow-400' : '' ?>" 
               data-post-id="<?= $post['id'] ?>" 
@@ -498,7 +530,6 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
             </button>
           <?php endif; ?>
           
-          <!-- Delete button untuk post sendiri -->
           <?php if($post['user_id'] == $user_id): ?>
             <a href="delete_post.php?id=<?= $post['id'] ?>" 
               onclick="return confirm('Yakin ingin menghapus post ini?')"
@@ -535,11 +566,13 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <div id="edit-mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
       </div>
       
-      <div class="flex items-center gap-3 border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-blue-500 transition cursor-pointer text-sm md:text-base">
-        <i class="bi bi-image text-xl md:text-2xl text-blue-500"></i>
-        <span class="text-gray-400">Ganti Gambar (Optional)</span>
+      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-blue-500 transition cursor-pointer text-sm md:text-base edit-upload-box">
+        <div class="flex items-center gap-2">
+          <i class="bi bi-image text-xl md:text-2xl text-blue-500"></i>
+          <span class="text-gray-400">Ganti Gambar (Optional)</span>
+        </div>
         <input type="file" name="image" class="hidden" accept="image/*" id="edit_image_input">
-        <div id="current_image_info" class="text-xs text-gray-500"></div>
+        <div id="current_image_info" class="text-xs text-gray-500 mt-2"></div>
       </div>
       
       <input type="text" name="tags" id="edit_tags" placeholder="#tag1 #tag2" 
@@ -576,7 +609,6 @@ document.querySelectorAll('.pin-btn').forEach(btn => {
       const data = await response.json();
 
       if(data.status === 'ok') {
-        // Update button state
         const isPinned = data.is_pinned;
         const icon = this.querySelector('i');
         const span = this.querySelector('span');
@@ -591,18 +623,36 @@ document.querySelectorAll('.pin-btn').forEach(btn => {
           if(span) span.textContent = 'Pin';
         }
         
-        // Reload page untuk update ordering
         setTimeout(() => {
           location.reload();
         }, 300);
-      } else {
-        alert('Error: ' + (data.error || 'Gagal mengupdate pin status'));
       }
     } catch(error) {
       console.error('Error:', error);
-      alert('Terjadi kesalahan');
     }
   });
+});
+
+// Upload Preview untuk Main Form
+const uploadBox = document.querySelector('.upload-box');
+const uploadInput = document.getElementById('main_image_input');
+const uploadPreview = document.getElementById('main_image_preview');
+
+uploadBox.addEventListener('click', () => uploadInput.click());
+uploadInput.addEventListener('change', function(e) {
+  const file = this.files[0];
+  if(file && file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      uploadPreview.innerHTML = `
+        <div class="mt-2">
+          <img src="${event.target.result}" class="image-preview rounded-xl" alt="Preview">
+          <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
+        </div>
+      `;
+    };
+    reader.readAsDataURL(file);
+  }
 });
 
 // Edit Modal Functions
@@ -611,10 +661,19 @@ function openEditModal(postId, caption, tags, image) {
   document.getElementById('edit_caption').value = caption;
   document.getElementById('edit_tags').value = tags;
   
+  const imageInfo = document.getElementById('current_image_info');
   if(image) {
-    document.getElementById('current_image_info').textContent = 'Gambar saat ini: ' + image;
+    imageInfo.innerHTML = `
+      <div class="flex items-center gap-2 text-gray-300">
+        <img src="../uploads/${image}" class="w-12 h-12 rounded object-cover">
+        <div>
+          <p class="text-xs font-semibold">${image}</p>
+          <p class="text-xs text-gray-500">Upload file baru untuk mengganti</p>
+        </div>
+      </div>
+    `;
   } else {
-    document.getElementById('current_image_info').textContent = 'Tidak ada gambar';
+    imageInfo.innerHTML = '<p class="text-red-400"><i class="bi bi-exclamation-circle"></i> Tidak ada gambar</p>';
   }
   
   document.getElementById('editModal').classList.add('active');
@@ -624,12 +683,142 @@ function closeEditModal() {
   document.getElementById('editModal').classList.remove('active');
 }
 
-// Image upload trigger
-document.querySelector('.border-dashed').addEventListener('click', function() {
-  document.getElementById('edit_image_input').click();
+// Edit Image Preview
+const editBox = document.querySelector('.edit-upload-box');
+const editImageInput = document.getElementById('edit_image_input');
+
+editBox.addEventListener('click', () => editImageInput.click());
+editImageInput.addEventListener('change', function(e) {
+  const file = this.files[0];
+  const imageInfo = document.getElementById('current_image_info');
+  
+  if(file && file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      imageInfo.innerHTML = `
+        <div class="mt-2">
+          <img src="${event.target.result}" class="w-32 h-20 rounded object-cover">
+          <p class="text-xs text-green-400 mt-1"><i class="bi bi-check-circle-fill"></i> ${file.name} (akan diganti)</p>
+        </div>
+      `;
+    };
+    reader.readAsDataURL(file);
+  }
 });
 
-// Notification toggle
+// Share Post Function
+async function sharePost(postId) {
+  // Cek Native Share API
+  if(navigator.share) {
+    try {
+      const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+      await navigator.share({
+        title: 'Knowledge Battle Forum',
+        text: 'Lihat postingan menarik ini!',
+        url: url
+      });
+      return;
+    } catch(err) {
+      if(err.name === 'AbortError') return;
+    }
+  }
+  
+  // Fallback ke Custom Share Menu
+  showShareMenu(postId);
+}
+
+function showShareMenu(postId) {
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.id = 'shareModal';
+  modal.innerHTML = `
+    <div class="modal-content max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <i class="bi bi-share text-blue-500"></i>
+          Bagikan Postingan
+        </h3>
+        <button onclick="closeShareModal()" class="text-gray-400 hover:text-white">
+          <i class="bi bi-x-lg text-xl"></i>
+        </button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <button onclick="copyShareLink(${postId})" class="glass hover:bg-gray-700/50 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
+          <i class="bi bi-link-45deg text-blue-400"></i>
+          <span>Salin Tautan</span>
+        </button>
+        <button onclick="shareToWhatsApp(${postId})" class="glass hover:bg-green-700/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
+          <i class="bi bi-whatsapp text-green-500"></i>
+          <span>WhatsApp</span>
+        </button>
+        <button onclick="shareToTwitter(${postId})" class="glass hover:bg-blue-700/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
+          <i class="bi bi-twitter text-blue-400"></i>
+          <span>Twitter/X</span>
+        </button>
+        <button onclick="shareToFacebook(${postId})" class="glass hover:bg-blue-600/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
+          <i class="bi bi-facebook text-blue-600"></i>
+          <span>Facebook</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) {
+    if(e.target === modal) closeShareModal();
+  });
+}
+
+function copyShareLink(postId) {
+  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+  navigator.clipboard.writeText(url).then(() => {
+    showShareToast('✓ Tautan disalin ke clipboard!');
+    closeShareModal();
+  }).catch(() => {
+    alert('Gagal menyalin tautan');
+  });
+}
+
+function shareToWhatsApp(postId) {
+  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+  const text = 'Lihat postingan menarik di Knowledge Battle Forum:\n' + url;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  closeShareModal();
+  showShareToast('✓ Dibagikan ke WhatsApp!');
+}
+
+function shareToTwitter(postId) {
+  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+  const text = 'Lihat postingan menarik di Knowledge Battle Forum! #ForumDiskusi';
+  window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+  closeShareModal();
+  showShareToast('✓ Dibagikan ke Twitter!');
+}
+
+function shareToFacebook(postId) {
+  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+  closeShareModal();
+  showShareToast('✓ Dibagikan ke Facebook!');
+}
+
+function closeShareModal() {
+  const modal = document.getElementById('shareModal');
+  if(modal) modal.remove();
+}
+
+function showShareToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'share-toast fixed bottom-5 right-5 glass px-6 py-3 rounded-full text-sm flex items-center gap-2 z-50';
+  toast.innerHTML = `<i class="bi bi-check-circle-fill text-green-400"></i> ${message}`;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease-out';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+// Notification Toggle
 function toggleNotif() {
   const dropdown = document.getElementById('notif-dropdown');
   dropdown.classList.toggle('hidden');
@@ -661,7 +850,7 @@ fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&curr
     document.getElementById('temp').textContent = '28°C';
   });
 
-// Mention autocomplete for main form
+// Mention Autocomplete
 const usersList = <?= json_encode($users_list) ?>;
 const textarea = document.getElementById('caption');
 const dropdown = document.getElementById('mention-dropdown');
@@ -691,7 +880,6 @@ textarea.addEventListener('input', function(e) {
   }
 });
 
-// Mention autocomplete for edit form
 const editTextarea = document.getElementById('edit_caption');
 const editDropdown = document.getElementById('edit-mention-dropdown');
 
