@@ -9,23 +9,19 @@ if (!isset($_SESSION['user_id'])) {
 
  $user_id = $_SESSION['user_id'];
 
-/* ===================== DATA USER ===================== */
  $stmt = $conn->prepare("SELECT username, email, title, level, profile_pic FROM users WHERE id = ?");
  $stmt->bind_param("i", $user_id);
  $stmt->execute();
  $user = $stmt->get_result()->fetch_assoc();
 
-/* ===================== STATISTIK ===================== */
  $post_count      = $conn->query("SELECT COUNT(*) AS count FROM posts WHERE user_id = $user_id")->fetch_assoc()['count'];
  $comment_count   = $conn->query("SELECT COUNT(*) AS count FROM comments WHERE user_id = $user_id")->fetch_assoc()['count'];
  $likes_received  = $conn->query("SELECT COUNT(*) AS count FROM post_likes pl JOIN posts p ON pl.post_id = p.id WHERE p.user_id = $user_id")->fetch_assoc()['count'];
 
-// Jika tidak ada foto → default avatar
  $profile = (!empty($user['profile_pic']) && file_exists("../uploads/profile/".$user['profile_pic']))
           ? "../uploads/profile/".$user['profile_pic']
           : "https://ui-avatars.com/api/?name=".$user['username']."&background=ff4444&color=fff";
 
-// Check if user is admin or developer
  $is_admin = (strpos(strtolower($user['title']), 'admin') !== false);
  $is_developer = ($user['level'] >= 50);
 ?>

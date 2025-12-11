@@ -138,7 +138,7 @@ body { font-family: 'Poppins', sans-serif; }
         class="w-full p-3 rounded-lg bg-gray-800 border border-white/10 focus:ring-2 ring-red-500 outline-none <?= !$is_developer ? 'opacity-50 cursor-not-allowed' : '' ?>"
         <?= !$is_developer ? 'disabled' : '' ?>>
         <?php if(!$is_developer): ?>
-          <p class="text-xs text-gray-500 mt-1">📌 Hanya admin/developer yang dapat mengubah title</p>
+          <p class="text-xs text-gray-500 mt-1">Hanya admin/developer yang memberi title</p>
         <?php endif; ?>
       </div>
 
