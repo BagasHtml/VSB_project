@@ -11,11 +11,11 @@ if (!isset($_SESSION['user_id'])) {
   exit;
 }
 
-$user_id = $_SESSION['user_id'];
-$stmt = $conn->prepare("SELECT username, title, level, profile_pic FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+ $user_id = $_SESSION['user_id'];
+ $stmt = $conn->prepare("SELECT username, title, level, profile_pic FROM users WHERE id = ?");
+ $stmt->bind_param("i", $user_id);
+ $stmt->execute();
+ $user = $stmt->get_result()->fetch_assoc();
 
 if (!$user) {
     session_destroy();
@@ -23,7 +23,77 @@ if (!$user) {
     exit;
 }
 
-$is_developer = ($user['level'] >= 50);
+// Check if user is admin or developer
+ $is_admin = (strpos(strtolower($user['title']), 'admin') !== false);
+ $is_developer = ($user['level'] >= 50);
+
+// Handle delete notification
+if(isset($_GET['delete_notif_id'])) {
+  $notif_id = $_GET['delete_notif_id'];
+  
+  $delete = $conn->prepare("DELETE FROM notifications WHERE id = ? AND user_id = ?");
+  $delete->bind_param("ii", $notif_id, $user_id);
+  $delete->execute();
+  
+  header("Location: halaman_utama.php"); 
+  exit;
+}
+
+// Handle mark notification as read
+if(isset($_GET['read_notif'])) {
+  $notif_id = $_GET['read_notif'];
+  $update = $conn->prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?");
+  $update->bind_param("ii", $notif_id, $user_id);
+  $update->execute();
+  
+  header("Location: halaman_utama.php"); 
+  exit;
+}
+
+// Handle delete post - Owner, Admin, Developer can delete
+if(isset($_GET['delete_post_id'])) {
+  $post_id = $_GET['delete_post_id'];
+  
+  $check = $conn->prepare("SELECT user_id, image FROM posts WHERE id = ?");
+  $check->bind_param("i", $post_id);
+  $check->execute();
+  $post = $check->get_result()->fetch_assoc();
+  
+  if($post) {
+    // Check if user can delete this post
+    $can_delete = ($post['user_id'] == $user_id) || $is_admin || $is_developer;
+    
+    if($can_delete) {
+      // Delete image if exists
+      if($post['image'] && file_exists("../uploads/" . $post['image'])) {
+        unlink("../uploads/" . $post['image']);
+      }
+      
+      // Delete post
+      $delete = $conn->prepare("DELETE FROM posts WHERE id = ?");
+      $delete->bind_param("i", $post_id);
+      $delete->execute();
+      
+      // Delete related notifications
+      $delete_notif = $conn->prepare("DELETE FROM notifications WHERE post_id = ?");
+      $delete_notif->bind_param("i", $post_id);
+      $delete_notif->execute();
+      
+      // Delete related likes
+      $delete_likes = $conn->prepare("DELETE FROM post_likes WHERE post_id = ?");
+      $delete_likes->bind_param("i", $post_id);
+      $delete_likes->execute();
+      
+      // Delete related comments
+      $delete_comments = $conn->prepare("DELETE FROM comments WHERE post_id = ?");
+      $delete_comments->bind_param("i", $post_id);
+      $delete_comments->execute();
+    }
+  }
+  
+  header("Location: halaman_utama.php"); 
+  exit;
+}
 
 if(isset($_POST['update_post'])) {
   $post_id = $_POST['post_id'];
@@ -136,24 +206,24 @@ if(isset($_POST['like_post'])){
     $owner=$ownerQ->get_result()->fetch_assoc();
 
     if($owner['user_id'] != $user_id){
-      $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'like', ?,?)");
-      $msg=($user['username'] ?? 'Someone')." liked your post";
-      $notif->bind_param("iiis",$owner['user_id'],$user_id,$post_id,$msg);
-      $notif->execute();
+      // Check if notification already exists
+      $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='like'");
+      $notif_check->bind_param("iii", $owner['user_id'], $user_id, $post_id);
+      $notif_check->execute();
+      
+      if($notif_check->get_result()->num_rows == 0) {
+        $notif=$conn->prepare("INSERT INTO notifications(user_id,from_user_id,type,post_id,message) VALUES (?,?, 'like', ?,?)");
+        $msg=($user['username'] ?? 'Someone')." liked your post";
+        $notif->bind_param("iiis",$owner['user_id'],$user_id,$post_id,$msg);
+        $notif->execute();
+      }
     }
   }
   $stmt->execute();
   header("Location: halaman_utama.php"); exit;
 }
 
-if(isset($_GET['read_notif'])) {
-  $notif_id = $_GET['read_notif'];
-  $update = $conn->prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?");
-  $update->bind_param("ii", $notif_id, $user_id);
-  $update->execute();
-}
-
-$posts = $conn->query("
+ $posts = $conn->query("
  SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
  (SELECT COUNT(*) FROM post_likes WHERE post_id=posts.id) AS like_count,
@@ -161,15 +231,20 @@ $posts = $conn->query("
  FROM posts JOIN users ON posts.user_id=users.id ORDER BY posts.is_pinned DESC, posts.created_at DESC
 ");
 
-$notifs = $conn->query("
- SELECT n.*,u.username AS from_username
+ $notifs = $conn->query("
+ SELECT n.*,u.username AS from_username, u.profile_pic AS from_profile_pic
  FROM notifications n JOIN users u ON n.from_user_id=u.id
- WHERE n.user_id=$user_id AND n.is_read=0 ORDER BY n.created_at DESC LIMIT 10
+ WHERE n.user_id=$user_id ORDER BY n.is_read ASC, n.created_at DESC LIMIT 20
 ");
-$unread_count = $notifs->num_rows;
+ $unread_count = 0;
+ $notif_rows = [];
+while($notif = $notifs->fetch_assoc()) {
+  $notif_rows[] = $notif;
+  if($notif['is_read'] == 0) $unread_count++;
+}
 
-$users_list=[];
-$all=$conn->query("SELECT id,username FROM users ORDER BY username");
+ $users_list=[];
+ $all=$conn->query("SELECT id,username FROM users ORDER BY username");
 while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 ?>
 <!DOCTYPE html>
@@ -206,16 +281,11 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-  }
-  .pinned-badge-small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.625rem;
-    line-height: 1;
-  }
-  .pinned-badge-medium {
     padding: 0.375rem 0.75rem;
     font-size: 0.75rem;
-    line-height: 1;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    color: #1f2937;
   }
   .modal {
     display: none;
@@ -266,6 +336,19 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       opacity: 1;
     }
   }
+  .admin-badge {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+  }
+  .dev-badge {
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+  }
+  .notif-unread {
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 3px solid #3b82f6;
+  }
+  .notif-read {
+    opacity: 0.7;
+  }
 </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white min-h-screen">
@@ -300,28 +383,60 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           <?php endif; ?>
         </button>
         
-        <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 glass rounded-2xl p-4 max-h-96 overflow-y-auto">
-          <h3 class="font-bold mb-3 flex items-center justify-between">
-            <span>Notifikasi</span>
+        <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-96 glass rounded-2xl p-4 max-h-96 overflow-y-auto shadow-2xl">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg">Notifikasi</h3>
             <?php if($unread_count > 0): ?>
-              <span class="text-xs bg-red-600 px-2 py-1 rounded-full"><?= $unread_count ?> baru</span>
+              <span class="text-xs bg-red-600 px-3 py-1 rounded-full font-semibold"><?= $unread_count ?> baru</span>
             <?php endif; ?>
-          </h3>
-          <?php if($notifs->num_rows > 0): ?>
-            <?php while($notif = $notifs->fetch_assoc()): ?>
-              <a href="comments.php?post_id=<?= $notif['post_id'] ?>&read_notif=<?= $notif['id'] ?>" 
-                 class="block p-3 hover:bg-white/10 rounded-xl mb-2 transition">
-                <div class="flex items-start gap-2">
-                  <i class="bi bi-<?= $notif['type'] == 'mention' ? 'at' : ($notif['type'] == 'like' ? 'heart-fill text-red-500' : 'chat-dots') ?> mt-1"></i>
-                  <div class="flex-1">
-                    <p class="text-sm"><?= htmlspecialchars($notif['message']) ?></p>
-                    <span class="text-xs text-gray-400"><?= date('d M, H:i', strtotime($notif['created_at'])) ?></span>
+          </div>
+          
+          <?php if(count($notif_rows) > 0): ?>
+            <div class="space-y-2">
+              <?php foreach($notif_rows as $notif): ?>
+                <div class="p-3 rounded-xl transition group <?= $notif['is_read'] == 0 ? 'notif-unread hover:bg-blue-500/20' : 'notif-read hover:bg-white/5' ?>">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-start gap-2 flex-1">
+                      <?php if(!empty($notif['from_profile_pic'])): ?>
+                        <img src="../uploads/profile/<?= htmlspecialchars($notif['from_profile_pic']) ?>" 
+                             class="w-8 h-8 rounded-full object-cover border border-white/10 flex-shrink-0 mt-0.5">
+                      <?php else: ?>
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          <?= strtoupper(substr($notif['from_username'] ?? 'U', 0, 1)) ?>
+                        </div>
+                      <?php endif; ?>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-blue-400"><?= htmlspecialchars($notif['from_username']) ?></p>
+                        <p class="text-sm text-gray-200 break-words"><?= htmlspecialchars($notif['message']) ?></p>
+                        <span class="text-xs text-gray-500"><?= date('d M, H:i', strtotime($notif['created_at'])) ?></span>
+                      </div>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+                      <?php if($notif['is_read'] == 0): ?>
+                        <a href="?read_notif=<?= $notif['id'] ?>" 
+                           title="Tandai dibaca"
+                           class="p-1.5 hover:bg-green-600/20 rounded transition">
+                          <i class="bi bi-check-circle text-green-400 text-sm"></i>
+                        </a>
+                      <?php endif; ?>
+                      <a href="?delete_notif_id=<?= $notif['id'] ?>" 
+                         title="Hapus"
+                         onclick="return confirm('Hapus notifikasi ini?')"
+                         class="p-1.5 hover:bg-red-600/20 rounded transition">
+                        <i class="bi bi-trash text-red-400 text-sm"></i>
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </a>
-            <?php endwhile; ?>
+              <?php endforeach; ?>
+            </div>
           <?php else: ?>
-            <p class="text-center text-gray-400 py-4">Tidak ada notifikasi</p>
+            <p class="text-center text-gray-400 py-8">
+              <i class="bi bi-inbox text-3xl mb-2 block"></i>
+              Tidak ada notifikasi
+            </p>
           <?php endif; ?>
         </div>
       </div>
@@ -337,7 +452,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </div>
         <?php endif; ?>
         <div class="font-semibold"><?= htmlspecialchars($user['username'] ?? 'Unknown') ?></div>
-        <span class="px-2 py-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full text-xs"><?= htmlspecialchars($user['title'] ?? 'Member') ?></span>
+        <span class="px-2 py-1 <?= $is_admin ? 'admin-badge' : ($is_developer ? 'dev-badge' : 'bg-gradient-to-r from-purple-600 to-purple-500') ?> rounded-full text-xs"><?= htmlspecialchars($user['title'] ?? 'Member') ?></span>
         <span class="px-2 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full text-xs font-bold">Lvl <?= $user['level'] ?? 1 ?></span>
       </div>
 
@@ -436,6 +551,11 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     while($post = $posts->fetch_assoc()): 
       $caption = htmlspecialchars($post['caption']);
       $caption = preg_replace('/@(\w+)/', '<span class="mention">@$1</span>', $caption);
+      
+      // Check if user can delete this post
+      $can_delete = ($post['user_id'] == $user_id) || $is_admin || $is_developer;
+      // Check if user can pin this post
+      $can_pin = $is_admin || $is_developer;
     ?>
       <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition relative <?= $post['is_pinned'] ? 'ring-2 ring-yellow-500/30' : '' ?>">
         <div class="flex justify-between items-start mb-3 md:mb-4">
@@ -458,7 +578,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </div>
           <div class="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
             <?php if($post['is_pinned']): ?>
-              <div class="pinned-badge pinned-badge-small md:pinned-badge-medium rounded-full font-bold text-gray-900 shadow-lg shadow-yellow-500/50">
+              <div class="pinned-badge rounded-full font-bold text-gray-900 shadow-lg shadow-yellow-500/50">
                 <i class="bi bi-pin-angle-fill"></i>
                 <span class="hidden sm:inline">Pinned</span>
               </div>
@@ -521,7 +641,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
             </button>
           <?php endif; ?>
           
-          <?php if($is_developer): ?>
+          <?php if($can_pin): ?>
             <button type="button" class="flex items-center gap-1 md:gap-2 glass hover:bg-yellow-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base pin-btn <?= $post['is_pinned'] ? 'text-yellow-400' : '' ?>" 
               data-post-id="<?= $post['id'] ?>" 
               data-pinned="<?= $post['is_pinned'] ?>">
@@ -530,8 +650,8 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
             </button>
           <?php endif; ?>
           
-          <?php if($post['user_id'] == $user_id): ?>
-            <a href="delete_post.php?id=<?= $post['id'] ?>" 
+          <?php if($can_delete): ?>
+            <a href="?delete_post_id=<?= $post['id'] ?>" 
               onclick="return confirm('Yakin ingin menghapus post ini?')"
               class="flex items-center gap-1 md:gap-2 glass hover:bg-red-600/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base text-red-400">
               <i class="bi bi-trash"></i>
@@ -542,7 +662,6 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       </div>
     <?php endwhile; ?>
   </div>
-
 </main>
 
 <!-- Edit Post Modal -->
@@ -707,14 +826,18 @@ editImageInput.addEventListener('change', function(e) {
 });
 
 // Share Post Function
+// Share Post Function - Improved
 async function sharePost(postId) {
-  // Cek Native Share API
+  // Check Native Share API support
   if(navigator.share) {
     try {
+      const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+      const username = postElement.querySelector('.font-bold').textContent;
       const url = window.location.href.split('?')[0] + '?post_id=' + postId;
+      
       await navigator.share({
-        title: 'Knowledge Battle Forum',
-        text: 'Lihat postingan menarik ini!',
+        title: 'Knowledge Battle - Diskusi Menarik',
+        text: `Lihat postingan dari ${username} di Knowledge Battle Forum!`,
         url: url
       });
       return;
@@ -723,9 +846,220 @@ async function sharePost(postId) {
     }
   }
   
-  // Fallback ke Custom Share Menu
-  showShareMenu(postId);
+  // Fallback ke Custom Share Modal
+  showShareModal(postId);
 }
+
+function showShareModal(postId) {
+  // Remove existing modal if any
+  const existingModal = document.getElementById('shareModal');
+  if(existingModal) existingModal.remove();
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.id = 'shareModal';
+  modal.style.zIndex = '9999';
+  
+  const postUrl = window.location.href.split('?')[0] + '?post_id=' + postId;
+  const currentPageUrl = window.location.href;
+  
+  modal.innerHTML = `
+    <div class="modal-content max-w-sm">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-lg md:text-xl font-bold flex items-center gap-3">
+          <i class="bi bi-share text-2xl text-blue-500"></i>
+          <span>Bagikan Postingan</span>
+        </h3>
+        <button onclick="closeShareModal()" class="text-gray-400 hover:text-white hover:bg-white/10 p-2 rounded-lg transition">
+          <i class="bi bi-x-lg text-xl"></i>
+        </button>
+      </div>
+      
+      <!-- Link Section -->
+      <div class="mb-6 p-4 bg-gray-800/50 rounded-xl border border-white/10">
+        <p class="text-xs text-gray-400 mb-2 flex items-center gap-2">
+          <i class="bi bi-link-45deg"></i>
+          Link Postingan
+        </p>
+        <div class="flex gap-2">
+          <input type="text" id="shareLink" value="${postUrl}" 
+                 class="flex-1 bg-gray-900 border border-white/10 px-3 py-2 rounded-lg text-xs focus:outline-none focus:border-blue-500 select-all"
+                 readonly>
+          <button onclick="copyShareLink('${postUrl}')" 
+                  class="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg text-white font-semibold transition flex items-center gap-2">
+            <i class="bi bi-clipboard"></i>
+            <span class="hidden sm:inline">Salin</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Share Buttons -->
+      <p class="text-xs text-gray-400 mb-3 flex items-center gap-2">
+        <i class="bi bi-share-fill"></i>
+        Bagikan ke Media Sosial
+      </p>
+      <div class="grid grid-cols-2 gap-2 mb-6">
+        <button onclick="shareToWhatsApp('${postUrl}')" 
+                class="glass hover:bg-green-700/30 hover:border-green-500/50 px-4 py-3 rounded-xl text-white font-semibold transition flex flex-col items-center gap-2">
+          <i class="bi bi-whatsapp text-2xl text-green-500"></i>
+          <span class="text-xs">WhatsApp</span>
+        </button>
+        
+        <button onclick="shareToTelegram('${postUrl}')" 
+                class="glass hover:bg-blue-700/30 hover:border-blue-500/50 px-4 py-3 rounded-xl text-white font-semibold transition flex flex-col items-center gap-2">
+          <i class="bi bi-telegram text-2xl text-blue-400"></i>
+          <span class="text-xs">Telegram</span>
+        </button>
+        
+        <button onclick="shareToTwitter('${postUrl}')" 
+                class="glass hover:bg-sky-700/30 hover:border-sky-500/50 px-4 py-3 rounded-xl text-white font-semibold transition flex flex-col items-center gap-2">
+          <i class="bi bi-twitter text-2xl text-sky-400"></i>
+          <span class="text-xs">Twitter/X</span>
+        </button>
+        
+        <button onclick="shareToFacebook('${postUrl}')" 
+                class="glass hover:bg-blue-600/30 hover:border-blue-500/50 px-4 py-3 rounded-xl text-white font-semibold transition flex flex-col items-center gap-2">
+          <i class="bi bi-facebook text-2xl text-blue-600"></i>
+          <span class="text-xs">Facebook</span>
+        </button>
+      </div>
+      
+      <!-- Email Section -->
+      <p class="text-xs text-gray-400 mb-3 flex items-center gap-2">
+        <i class="bi bi-envelope"></i>
+        Bagikan via Email
+      </p>
+      <button onclick="shareViaEmail('${postUrl}')" 
+              class="w-full glass hover:bg-white/10 px-4 py-3 rounded-xl text-white font-semibold transition flex items-center justify-center gap-2">
+        <i class="bi bi-envelope-fill text-orange-400"></i>
+        <span>Kirim via Email</span>
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Close modal when clicking outside
+  modal.addEventListener('click', function(e) {
+    if(e.target === modal) {
+      closeShareModal();
+    }
+  });
+  
+  // Close with Escape key
+  document.addEventListener('keydown', function(e) {
+    if(e.key === 'Escape') closeShareModal();
+  }, { once: true });
+}
+
+function copyShareLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    showShareToast('✓ Tautan disalin!', 'success');
+    setTimeout(closeShareModal, 500);
+  }).catch(() => {
+    showShareToast('✗ Gagal menyalin tautan', 'error');
+  });
+}
+
+function shareToWhatsApp(url) {
+  const text = encodeURIComponent(`Lihat postingan menarik di Knowledge Battle Forum!\n\n${url}`);
+  window.open(`https://wa.me/?text=${text}`, '_blank');
+  showShareToast('✓ Dibagikan ke WhatsApp!', 'success');
+  setTimeout(closeShareModal, 500);
+}
+
+function shareToTelegram(url) {
+  const text = encodeURIComponent(`Lihat postingan menarik di Knowledge Battle Forum!\n${url}`);
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${text}`, '_blank');
+  showShareToast('✓ Dibagikan ke Telegram!', 'success');
+  setTimeout(closeShareModal, 500);
+}
+
+function shareToTwitter(url) {
+  const text = encodeURIComponent('Lihat postingan menarik di Knowledge Battle Forum! 🔥 #ForumDiskusi #KnowledgeBattle');
+  window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${text}`, '_blank');
+  showShareToast('✓ Dibagikan ke Twitter!', 'success');
+  setTimeout(closeShareModal, 500);
+}
+
+function shareToFacebook(url) {
+  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent('Lihat postingan menarik di Knowledge Battle Forum!')}`, '_blank');
+  showShareToast('✓ Dibagikan ke Facebook!', 'success');
+  setTimeout(closeShareModal, 500);
+}
+
+function shareViaEmail(url) {
+  const subject = encodeURIComponent('Postingan Menarik dari Knowledge Battle Forum');
+  const body = encodeURIComponent(`Halo!\n\nSaya ingin berbagi postingan menarik dengan Anda dari Knowledge Battle Forum:\n\n${url}\n\nSemoga bermanfaat!`);
+  window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+  showShareToast('✓ Email siap dikirim!', 'success');
+  setTimeout(closeShareModal, 500);
+}
+
+function closeShareModal() {
+  const modal = document.getElementById('shareModal');
+  if(modal) {
+    modal.style.animation = 'fadeOut 0.3s ease-out';
+    setTimeout(() => modal.remove(), 300);
+  }
+}
+
+function showShareToast(message, type = 'success') {
+  // Remove existing toast
+  const existingToast = document.querySelector('.share-toast');
+  if(existingToast) existingToast.remove();
+  
+  const toast = document.createElement('div');
+  const bgColor = type === 'success' ? 'bg-green-600/90' : 'bg-red-600/90';
+  
+  toast.className = `share-toast fixed bottom-6 right-6 ${bgColor} px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 z-[9999] backdrop-blur-md border border-white/10 shadow-2xl`;
+  toast.innerHTML = `
+    ${message}
+  `;
+  
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease-out forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// Add CSS animations
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  
+  @keyframes slideOut {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(120%);
+      opacity: 0;
+    }
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateY(100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  .share-toast {
+    animation: slideIn 0.3s ease-out;
+  }
+`;
+document.head.appendChild(style);
 
 function showShareMenu(postId) {
   const modal = document.createElement('div');
@@ -838,7 +1172,7 @@ function updateTime() {
   const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('time').textContent = time;
 }
-setInterval(updateTime, 1000);
+setInterval(updateTime, 60000);
 updateTime();
 
 fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&current_weather=true')

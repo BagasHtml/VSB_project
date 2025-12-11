@@ -211,21 +211,6 @@ if ($alter_check && $alter_check->num_rows > 0) {
         $update_token->close();
     }
 }
-
-// ============================================
-// SEND VERIFICATION EMAIL (via PHPMailer)
-// ============================================
-include 'email_helper.php';
-
-$email_result = sendVerificationEmail($email, $username, $activation_token);
-
-// Catat jika email gagal (tapi tetap lanjutkan registrasi)
-if (!$email_result['success']) {
-    error_log("Failed to send verification email to: " . $email . " | Error: " . $email_result['message']);
-}
-
-$conn->close();
-
 // ============================================
 // SEND VERIFICATION EMAIL (via PHPMailer)
 // ============================================

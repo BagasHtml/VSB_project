@@ -1,19 +1,27 @@
 <?php
 session_start();
-require __DIR__ . '/db.php';            
+require __DIR__ . '/db.php';
 require __DIR__ . '/../config/config.php';
-require __DIR__ . '/email_helper.php';  
+require __DIR__ . '/email_helper.php';
 
 /**
- * Helper kecil
+ * Helper kecil untuk mendapatkan timestamp SQL
  */
 function now_sql() {
     return date('Y-m-d H:i:s');
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
-$action = $_POST['action'] ?? null;
-$display = [
+// --- PRE-CHECK: Cek keberadaan kolom `token_created_at` sekali di awal ---
+ $use_token_created_col = false;
+ $check_col = $conn->query("SHOW COLUMNS FROM users LIKE 'token_created_at'");
+if ($check_col && $check_col->num_rows > 0) {
+    $use_token_created_col = true;
+}
+
+ $method = $_SERVER['REQUEST_METHOD'];
+ $action = $_POST['action'] ?? null;
+
+ $display = [
     'status' => 'info',
     'title'  => 'Verifikasi Email',
     'message'=> '',
@@ -27,8 +35,11 @@ if ($method === 'POST' && $action === 'resend') {
     if ($email_post === '' || !filter_var($email_post, FILTER_VALIDATE_EMAIL)) {
         $display['status'] = 'error';
         $display['message'] = 'Email tidak valid untuk dikirim ulang.';
+        $display['show_resend_form'] = true;
+        $display['email'] = $email_post;
     } else {
-        $stmt = $conn->prepare("SELECT id, username, email_verified FROM users WHERE email = ? LIMIT 1");
+        // PERBAIKAN: Tambahkan kolom 'email' ke SELECT
+        $stmt = $conn->prepare("SELECT id, username, email, email_verified FROM users WHERE email = ? LIMIT 1");
         $stmt->bind_param("s", $email_post);
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
@@ -37,48 +48,59 @@ if ($method === 'POST' && $action === 'resend') {
         if (!$user) {
             $display['status'] = 'error';
             $display['message'] = "Email tidak ditemukan di sistem.";
-        } else if ($user['email_verified'] == 1) {
+            $display['show_resend_form'] = true;
+            $display['email'] = $email_post;
+        } else if ((int)($user['email_verified'] ?? 0) === 1) {
             $display['status'] = 'warning';
             $display['message'] = "Akun sudah terverifikasi. Silakan login.";
         } else {
-            // generate token baru
-            try {
-                $newToken = bin2hex(random_bytes(32));
-            } catch (Exception $e) {
-                $newToken = sha1($user['email'] . time() . random_int(1000,9999));
-            }
-
-            $use_token_created_col = false;
-            $check = $conn->query("SHOW COLUMNS FROM users LIKE 'token_created_at'");
-            if ($check && $check->num_rows > 0) $use_token_created_col = true;
-
-            if ($use_token_created_col) {
-                $stmt = $conn->prepare("UPDATE users SET verification_token = ?, token_created_at = ? WHERE id = ?");
-                $ts = now_sql();
-                $stmt->bind_param("ssi", $newToken, $ts, $user['id']);
+            // PERBAIKAN: Validasi email dari database sebelum melanjutkan
+            $userEmail = $user['email'] ?? '';
+            if (empty($userEmail) || !filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
+                $display['status'] = 'error';
+                $display['message'] = "Data pengguna tidak lengkap atau email tidak valid di database.";
+                $display['show_resend_form'] = true;
+                $display['email'] = $email_post;
             } else {
-                $stmt = $conn->prepare("UPDATE users SET verification_token = ? WHERE id = ?");
-                $stmt->bind_param("si", $newToken, $user['id']);
-            }
-            $ok = $stmt->execute();
-            $stmt->close();
+                // generate token baru
+                try {
+                    $newToken = bin2hex(random_bytes(32));
+                } catch (Exception $e) {
+                    // Fallback jika random_bytes gagal
+                    $newToken = sha1(uniqid($userEmail, true));
+                }
 
-            if ($ok) {
-                $send = sendResendVerificationEmail($user['email'], $user['username'] ?? $user['email'], $newToken);
-                if ($send['success']) {
-                    $display['status'] = 'success';
-                    $display['message'] = "Link verifikasi baru telah dikirim ke <b>" . htmlspecialchars($user['email'] ?? '', ENT_QUOTES) . "</b>. Silakan cek email (termasuk folder Spam).";
+                // Gunakan variabel boolean $use_token_created_col yang sudah disiapkan
+                if ($use_token_created_col) {
+                    $stmt = $conn->prepare("UPDATE users SET verification_token = ?, token_created_at = ? WHERE id = ?");
+                    $ts = now_sql();
+                    $stmt->bind_param("ssi", $newToken, $ts, $user['id']);
+                } else {
+                    $stmt = $conn->prepare("UPDATE users SET verification_token = ? WHERE id = ?");
+                    $stmt->bind_param("si", $newToken, $user['id']);
+                }
+                
+                $ok = $stmt->execute();
+                $stmt->close();
+
+                if ($ok) {
+                    $userName = $user['username'] ?? $userEmail;
+                    $send = sendResendVerificationEmail($userEmail, $userName, $newToken);
+                    if ($send['success']) {
+                        $display['status'] = 'success';
+                        $display['message'] = "Link verifikasi baru telah dikirim ke <b>" . htmlspecialchars($userEmail, ENT_QUOTES) . "</b>. Silakan cek email (termasuk folder Spam).";
+                    } else {
+                        $display['status'] = 'error';
+                        $display['message'] = "Gagal mengirim email verifikasi: " . htmlspecialchars($send['message'] ?? 'Unknown error', ENT_QUOTES);
+                        $display['show_resend_form'] = true;
+                        $display['email'] = $userEmail;
+                    }
                 } else {
                     $display['status'] = 'error';
-                    $display['message'] = "Gagal mengirim email verifikasi: " . htmlspecialchars($send['message'] ?? 'Unknown error', ENT_QUOTES);
+                    $display['message'] = "Gagal menyimpan token verifikasi. Coba lagi nanti.";
                     $display['show_resend_form'] = true;
-                    $display['email'] = $user['email'] ?? '';
+                    $display['email'] = $userEmail;
                 }
-            } else {
-                $display['status'] = 'error';
-                $display['message'] = "Gagal menyimpan token verifikasi. Coba lagi nanti.";
-                $display['show_resend_form'] = true;
-                $display['email'] = $user['email'] ?? '';
             }
         }
     }
@@ -89,33 +111,34 @@ if ($method === 'GET') {
     $token = trim($_GET['token'] ?? '');
     $email = trim($_GET['email'] ?? '');
 
-    if ($token === '' && $email === '') {
+    if ($token === '') {
         $display['status'] = 'error';
-        $display['message'] = 'Parameter token/email tidak ditemukan.';
+        $display['message'] = 'Parameter token tidak ditemukan.';
         $display['show_resend_form'] = true;
         $display['email'] = $email;
     } else {
         $user = null;
-        if ($email !== '') {
-            $stmt = $conn->prepare("SELECT id, username, verification_token, email_verified, token_created_at FROM users WHERE email = ? LIMIT 1");
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $user = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-        }
-
-        if (!$user && $token !== '') {
-            $stmt = $conn->prepare("SELECT id, username, verification_token, email_verified, token_created_at, email FROM users WHERE verification_token = ? LIMIT 1");
-            $stmt->bind_param("s", $token);
-            $stmt->execute();
-            $user = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if ($user) $email = $user['email'] ?? '';
+        // PERBAIKAN: Coba cari user berdasarkan token, karena lebih andal. Tambahkan kolom 'email'.
+        $stmt = $conn->prepare("SELECT id, username, email, verification_token, email_verified, token_created_at FROM users WHERE verification_token = ? LIMIT 1");
+        $stmt->bind_param("s", $token);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        
+        // Jika ditemukan, update variabel $email dari data user
+        if ($user) {
+            $email = $user['email'] ?? '';
         }
 
         if (!$user) {
             $display['status'] = 'error';
-            $display['message'] = 'Token tidak valid atau email tidak ditemukan.';
+            $display['message'] = 'Token tidak valid atau sudah tidak berlaku.';
+            $display['show_resend_form'] = true;
+            $display['email'] = $email;
+        } else if (empty($user['email'])) {
+             // PERBAIKAN: Cek jika email user kosong di database
+            $display['status'] = 'error';
+            $display['message'] = 'Data pengguna tidak lengkap. Email tidak ditemukan.';
             $display['show_resend_form'] = true;
             $display['email'] = $email;
         } else {
@@ -123,25 +146,34 @@ if ($method === 'GET') {
                 $display['status'] = 'warning';
                 $display['message'] = 'Email ini sudah diverifikasi sebelumnya.';
             } else {
-                if (empty($user['verification_token']) || $token === '' || !hash_equals($user['verification_token'], $token)) {
+                if (empty($user['verification_token']) || !hash_equals($user['verification_token'], $token)) {
                     $display['status'] = 'error';
-                    $display['message'] = 'Token tidak cocok atau mungkin sudah kadaluarsa.';
+                    $display['message'] = 'Token tidak cocok.';
                     $display['show_resend_form'] = true;
                     $display['email'] = $email;
                 } else {
                     $expired = false;
                     if (!empty($user['token_created_at'])) {
                         $created = strtotime($user['token_created_at']);
-                        if ($created !== false && (time() - $created)/3600 > 24) $expired = true;
+                        if ($created !== false && (time() - $created) > 86400) { // 86400 detik = 24 jam
+                            $expired = true;
+                        }
                     }
 
                     if ($expired) {
                         $display['status'] = 'error';
-                        $display['message'] = 'Token sudah kedaluwarsa. Silakan minta link verifikasi baru.';
+                        $display['message'] = 'Token sudah kedaluwarsa (berlaku 24 jam). Silakan minta link verifikasi baru.';
                         $display['show_resend_form'] = true;
                         $display['email'] = $email;
                     } else {
-                        $stmt = $conn->prepare("UPDATE users SET email_verified = 1, verification_token = NULL" . ((bool)$conn->query("SHOW COLUMNS FROM users LIKE 'token_created_at'")->num_rows ? ", token_created_at = NULL" : "") . " WHERE id = ?");
+                        // PERBAIKAN: Gunakan variabel boolean $use_token_created_col
+                        $sql_update = "UPDATE users SET email_verified = 1, verification_token = NULL";
+                        if ($use_token_created_col) {
+                            $sql_update .= ", token_created_at = NULL";
+                        }
+                        $sql_update .= " WHERE id = ?";
+                        
+                        $stmt = $conn->prepare($sql_update);
                         $stmt->bind_param("i", $user['id']);
                         $ok = $stmt->execute();
                         $stmt->close();
@@ -152,7 +184,7 @@ if ($method === 'GET') {
                             $autoRedirect = true;
                         } else {
                             $display['status'] = 'error';
-                            $display['message'] = 'Gagal menyelesaikan verifikasi. Silakan coba lagi nanti.';
+                            $display['message'] = 'Gagal menyelesaikan verifikasi di database. Silakan coba lagi nanti.';
                             $display['show_resend_form'] = true;
                             $display['email'] = $email;
                         }
@@ -224,7 +256,7 @@ a.link{color:var(--accent);text-decoration:none;font-weight:700;}
         </div>
       <?php else: ?>
         <div class="actions">
-          <a class="btn primary" href="<?= APP_URL ?>/login_register/form_login.php">Ke Halaman Login</a>
+          <a class="btn primary" href="../View/login_register/form_login.php">Ke Halaman Login</a>
           <a class="btn secondary" href="<?= APP_URL ?>/">Kembali ke Home</a>
         </div>
       <?php endif; ?>

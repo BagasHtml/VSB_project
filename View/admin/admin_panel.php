@@ -13,23 +13,78 @@ if(
 }
 
 // Get admin info
-$admin_id = $_SESSION['admin_id'];
-$admin_stmt = $conn->prepare("SELECT username, role, email FROM users WHERE id = ?");
-$admin_stmt->bind_param("i", $admin_id);
-$admin_stmt->execute();
-$admin = $admin_stmt->get_result()->fetch_assoc();
+ $admin_id = $_SESSION['admin_id'];
+ $admin_stmt = $conn->prepare("SELECT username, role, email FROM users WHERE id = ?");
+ $admin_stmt->bind_param("i", $admin_id);
+ $admin_stmt->execute();
+ $admin = $admin_stmt->get_result()->fetch_assoc();
 
 // Get statistics
-$total_users = $conn->query("SELECT COUNT(*) as count FROM users")->fetch_assoc()['count'];
-$total_posts = $conn->query("SELECT COUNT(*) as count FROM posts")->fetch_assoc()['count'];
-$total_comments = $conn->query("SELECT COUNT(*) as count FROM comments")->fetch_assoc()['count'];
-$pinned_posts = $conn->query("SELECT COUNT(*) as count FROM posts WHERE is_pinned = 1")->fetch_assoc()['count'];
+ $total_users = $conn->query("SELECT COUNT(*) as count FROM users")->fetch_assoc()['count'];
+ $total_posts = $conn->query("SELECT COUNT(*) as count FROM posts")->fetch_assoc()['count'];
+ $total_comments = $conn->query("SELECT COUNT(*) as count FROM comments")->fetch_assoc()['count'];
+ $pinned_posts = $conn->query("SELECT COUNT(*) as count FROM posts WHERE is_pinned = 1")->fetch_assoc()['count'];
 
 // Get users list
-$users = $conn->query("SELECT id, username, email, role, title, level FROM users ORDER BY id DESC");
+ $users = $conn->query("SELECT id, username, email, role, title, level FROM users ORDER BY id DESC");
 
 // Get posts list
-$posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT COUNT(*) FROM comments WHERE post_id=p.id) as comment_count, (SELECT COUNT(*) FROM post_likes WHERE post_id=p.id) as like_count, p.created_at FROM posts p JOIN users u ON p.user_id=u.id ORDER BY p.created_at DESC LIMIT 50");
+ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT COUNT(*) FROM comments WHERE post_id=p.id) as comment_count, (SELECT COUNT(*) FROM post_likes WHERE post_id=p.id) as like_count, p.created_at FROM posts p JOIN users u ON p.user_id=u.id ORDER BY p.created_at DESC LIMIT 50");
+
+// Chart data - User registrations by month
+ $user_registrations = $conn->query("
+    SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as count 
+    FROM users 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ORDER BY month
+");
+
+// Chart data - Posts by month
+ $posts_by_month = $conn->query("
+    SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as count 
+    FROM posts 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ORDER BY month
+");
+
+// Chart data - Comments by month
+ $comments_by_month = $conn->query("
+    SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as count 
+    FROM comments 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ORDER BY month
+");
+
+// User roles distribution
+ $user_roles = $conn->query("
+    SELECT role, COUNT(*) as count 
+    FROM users 
+    GROUP BY role
+");
+
+// Most active users (based on posts)
+ $active_users = $conn->query("
+    SELECT u.username, COUNT(p.id) as post_count
+    FROM users u
+    JOIN posts p ON u.id = p.user_id
+    GROUP BY u.id
+    ORDER BY post_count DESC
+    LIMIT 5
+");
+
+// Most liked posts
+ $liked_posts = $conn->query("
+    SELECT p.id, p.caption, COUNT(pl.id) as like_count, u.username
+    FROM posts p
+    JOIN post_likes pl ON p.id = pl.post_id
+    JOIN users u ON p.user_id = u.id
+    GROUP BY p.id
+    ORDER BY like_count DESC
+    LIMIT 5
+");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -39,6 +94,7 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
 <title>Admin Dashboard - Knowledge Battle</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
   
@@ -124,6 +180,12 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
   
   table tbody tr:hover { 
     background: rgba(255,255,255,0.1);
+  }
+  
+  .chart-container {
+    position: relative;
+    height: 300px;
+    margin: 20px 0;
   }
   
   /* Mobile Layout */
@@ -222,6 +284,10 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
     h2 {
       font-size: 18px !important;
     }
+    
+    .chart-container {
+      height: 250px;
+    }
   }
   
   /* Tablet Layout */
@@ -244,6 +310,10 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
     
     table th, table td {
       padding: 10px 6px;
+    }
+    
+    .chart-container {
+      height: 280px;
     }
   }
   
@@ -280,6 +350,10 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
     
     .form-group {
       grid-template-columns: 1fr !important;
+    }
+    
+    .chart-container {
+      height: 200px;
     }
   }
 </style>
@@ -394,10 +468,70 @@ $posts = $conn->query("SELECT p.id, p.caption, p.is_pinned, u.username, (SELECT 
           </div>
         </div>
 
-        <!-- Welcome Message -->
-        <div class="glass p-6 rounded-2xl text-center">
-          <h2 class="text-2xl font-bold mb-2">Selamat Datang di Admin Panel 👋</h2>
-          <p class="text-gray-400">Gunakan navigasi di sebelah kiri untuk mengelola user dan post forum Knowledge Battle Anda.</p>
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <!-- User Registration Chart -->
+          <div class="glass p-6 rounded-2xl">
+            <h3 class="text-xl font-semibold mb-4">Pertumbuhan Pengguna</h3>
+            <div class="chart-container">
+              <canvas id="userRegistrationChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Posts & Comments Chart -->
+          <div class="glass p-6 rounded-2xl">
+            <h3 class="text-xl font-semibold mb-4">Aktivitas Konten</h3>
+            <div class="chart-container">
+              <canvas id="postsCommentsChart"></canvas>
+            </div>
+          </div>
+
+          <!-- User Roles Distribution -->
+          <div class="glass p-6 rounded-2xl">
+            <h3 class="text-xl font-semibold mb-4">Distribusi Peran Pengguna</h3>
+            <div class="chart-container">
+              <canvas id="userRolesChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Most Active Users -->
+          <div class="glass p-6 rounded-2xl">
+            <h3 class="text-xl font-semibold mb-4">Pengguna Paling Aktif</h3>
+            <div class="chart-container">
+              <canvas id="activeUsersChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top Posts Table -->
+        <div class="glass p-6 rounded-2xl">
+          <h3 class="text-xl font-semibold mb-4">Post Paling Disukai</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-white/10">
+                  <th class="text-left py-3 px-4 text-gray-400">ID</th>
+                  <th class="text-left py-3 px-4 text-gray-400">Caption</th>
+                  <th class="text-left py-3 px-4 text-gray-400">Author</th>
+                  <th class="text-left py-3 px-4 text-gray-400">Likes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php while($post = $liked_posts->fetch_assoc()): ?>
+                <tr class="border-b border-white/10 hover:bg-white/5 transition">
+                  <td class="py-3 px-4"><?= $post['id'] ?></td>
+                  <td class="py-3 px-4 font-medium max-w-xs truncate"><?= htmlspecialchars(substr($post['caption'], 0, 50)) ?>...</td>
+                  <td class="py-3 px-4"><?= htmlspecialchars($post['username']) ?></td>
+                  <td class="py-3 px-4 text-center">
+                    <span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-900/30 text-red-300">
+                      <i class="bi bi-heart-fill"></i> <?= $post['like_count'] ?>
+                    </span>
+                  </td>
+                </tr>
+                <?php endwhile; ?>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -601,12 +735,12 @@ function togglePin(postId, element) {
       }
       element.classList.toggle('active');
     } else {
-      alert('Gagal mengubah status pin');
+      alert('Gagal mengubah status pin: ' + (data.message || 'Unknown error'));
     }
   })
   .catch(err => {
     console.error('Error:', err);
-    alert('Terjadi kesalahan');
+    alert('Terjadi kesalahan saat menghubungi server');
   });
 }
 
@@ -620,49 +754,225 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// Search functionality for users
-document.getElementById('search-user').addEventListener('keyup', function(e) {
-  const query = this.value.toLowerCase();
-  const rows = document.querySelectorAll('#user-table-body tr');
+// Initialize Charts
+document.addEventListener('DOMContentLoaded', function() {
+  // Set default chart options
+  Chart.defaults.color = '#9ca3af';
+  Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
   
-  rows.forEach(row => {
-    const username = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
-    const email = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
-    
-    if (username.includes(query) || email.includes(query)) {
-      row.style.display = '';
-    } else {
-      row.style.display = 'none';
-    }
-  });
-});
-
-// Search functionality for posts
-document.getElementById('search-post').addEventListener('keyup', function() {
-  const query = this.value.toLowerCase();
-  const rows = document.querySelectorAll('#post-table-body tr');
-  
-  rows.forEach(row => {
-    const caption = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
-    const author = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
-    
-    if (caption.includes(query) || author.includes(query)) {
-      row.style.display = '';
-    } else {
-      row.style.display = 'none';
-    }
-  });
-});
-
-function togglePin(postId, btn) {
-  fetch(`toggle_pin.php?id=${postId}`)
-    .then(response => response.text())
-    .then(result => {
-      if(result === 'success'){
-        location.reload(); // update tampilan otomatis
+  // User Registration Chart
+  const userRegCtx = document.getElementById('userRegistrationChart').getContext('2d');
+  const userRegChart = new Chart(userRegCtx, {
+    type: 'line',
+    data: {
+      labels: [
+        <?php 
+        $months = [];
+        $counts = [];
+        while($row = $user_registrations->fetch_assoc()) {
+          $month = DateTime::createFromFormat('Y-m', $row['month'])->format('M Y');
+          echo "'$month',";
+          $months[] = $month;
+          $counts[] = $row['count'];
+        }
+        ?>
+      ],
+      datasets: [{
+        label: 'Pengguna Baru',
+        data: [<?php echo implode(',', $counts); ?>],
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 2,
+        tension: 0.4,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        },
+        x: {
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        }
       }
-    });
-}
+    }
+  });
+  
+  // Posts & Comments Chart
+  const postsCommentsCtx = document.getElementById('postsCommentsChart').getContext('2d');
+  
+  // Prepare data for posts chart
+  <?php 
+  $posts_months = [];
+  $posts_counts = [];
+  $posts_by_month->data_seek(0);
+  while($row = $posts_by_month->fetch_assoc()) {
+    $month = DateTime::createFromFormat('Y-m', $row['month'])->format('M Y');
+    $posts_months[] = $month;
+    $posts_counts[] = $row['count'];
+  }
+  
+  // Prepare data for comments chart
+  $comments_months = [];
+  $comments_counts = [];
+  $comments_by_month->data_seek(0);
+  while($row = $comments_by_month->fetch_assoc()) {
+    $month = DateTime::createFromFormat('Y-m', $row['month'])->format('M Y');
+    $comments_months[] = $month;
+    $comments_counts[] = $row['count'];
+  }
+  ?>
+  
+  const postsCommentsChart = new Chart(postsCommentsCtx, {
+    type: 'bar',
+    data: {
+      labels: [<?php echo "'" . implode("','", $posts_months) . "'"; ?>],
+      datasets: [
+        {
+          label: 'Posts',
+          data: [<?php echo implode(',', $posts_counts); ?>],
+          backgroundColor: 'rgba(34, 197, 94, 0.7)',
+          borderColor: 'rgba(34, 197, 94, 1)',
+          borderWidth: 1
+        },
+        {
+          label: 'Comments',
+          data: [<?php echo implode(',', $comments_counts); ?>],
+          backgroundColor: 'rgba(168, 85, 247, 0.7)',
+          borderColor: 'rgba(168, 85, 247, 1)',
+          borderWidth: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        },
+        x: {
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        }
+      }
+    }
+  });
+  
+  // User Roles Distribution Chart
+  const userRolesCtx = document.getElementById('userRolesChart').getContext('2d');
+  
+  <?php 
+  $roles = [];
+  $role_counts = [];
+  while($row = $user_roles->fetch_assoc()) {
+    $roles[] = ucfirst($row['role']);
+    $role_counts[] = $row['count'];
+  }
+  ?>
+  
+  const userRolesChart = new Chart(userRolesCtx, {
+    type: 'doughnut',
+    data: {
+      labels: [<?php echo "'" . implode("','", $roles) . "'"; ?>],
+      datasets: [{
+        data: [<?php echo implode(',', $role_counts); ?>],
+        backgroundColor: [
+          'rgba(239, 68, 68, 0.7)',
+          'rgba(59, 130, 246, 0.7)',
+          'rgba(34, 197, 94, 0.7)'
+        ],
+        borderColor: [
+          'rgba(239, 68, 68, 1)',
+          'rgba(59, 130, 246, 1)',
+          'rgba(34, 197, 94, 1)'
+        ],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+        }
+      }
+    }
+  });
+  
+  // Most Active Users Chart
+  const activeUsersCtx = document.getElementById('activeUsersChart').getContext('2d');
+  
+  <?php 
+  $active_usernames = [];
+  $post_counts = [];
+  while($row = $active_users->fetch_assoc()) {
+    $active_usernames[] = $row['username'];
+    $post_counts[] = $row['post_count'];
+  }
+  ?>
+  
+  const activeUsersChart = new Chart(activeUsersCtx, {
+    type: 'horizontalBar',
+    type: 'bar',
+    data: {
+      labels: [<?php echo "'" . implode("','", $active_usernames) . "'"; ?>],
+      datasets: [{
+        label: 'Posts',
+        data: [<?php echo implode(',', $post_counts); ?>],
+        backgroundColor: 'rgba(251, 191, 36, 0.7)',
+        borderColor: 'rgba(251, 191, 36, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        },
+        y: {
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          }
+        }
+      }
+    }
+  });
+});
 </script>
 
 </body>

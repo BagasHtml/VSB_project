@@ -7,23 +7,27 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$user_id = $_SESSION['user_id'];
+ $user_id = $_SESSION['user_id'];
 
 /* ===================== DATA USER ===================== */
-$stmt = $conn->prepare("SELECT username, email, title, level, profile_pic FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+ $stmt = $conn->prepare("SELECT username, email, title, level, profile_pic FROM users WHERE id = ?");
+ $stmt->bind_param("i", $user_id);
+ $stmt->execute();
+ $user = $stmt->get_result()->fetch_assoc();
 
 /* ===================== STATISTIK ===================== */
-$post_count      = $conn->query("SELECT COUNT(*) AS count FROM posts WHERE user_id = $user_id")->fetch_assoc()['count'];
-$comment_count   = $conn->query("SELECT COUNT(*) AS count FROM comments WHERE user_id = $user_id")->fetch_assoc()['count'];
-$likes_received  = $conn->query("SELECT COUNT(*) AS count FROM post_likes pl JOIN posts p ON pl.post_id = p.id WHERE p.user_id = $user_id")->fetch_assoc()['count'];
+ $post_count      = $conn->query("SELECT COUNT(*) AS count FROM posts WHERE user_id = $user_id")->fetch_assoc()['count'];
+ $comment_count   = $conn->query("SELECT COUNT(*) AS count FROM comments WHERE user_id = $user_id")->fetch_assoc()['count'];
+ $likes_received  = $conn->query("SELECT COUNT(*) AS count FROM post_likes pl JOIN posts p ON pl.post_id = p.id WHERE p.user_id = $user_id")->fetch_assoc()['count'];
 
 // Jika tidak ada foto → default avatar
-$profile = (!empty($user['profile_pic']) && file_exists("../uploads/profile/".$user['profile_pic']))
+ $profile = (!empty($user['profile_pic']) && file_exists("../uploads/profile/".$user['profile_pic']))
           ? "../uploads/profile/".$user['profile_pic']
           : "https://ui-avatars.com/api/?name=".$user['username']."&background=ff4444&color=fff";
+
+// Check if user is admin or developer
+ $is_admin = (strpos(strtolower($user['title']), 'admin') !== false);
+ $is_developer = ($user['level'] >= 50);
 ?>
 
 <!DOCTYPE html>
@@ -108,21 +112,14 @@ $profile = (!empty($user['profile_pic']) && file_exists("../uploads/profile/".$u
       <div class="flex items-center gap-3"><i class="bi bi-file-earmark-text text-2xl text-purple-400"></i><div><div class="font-semibold">Post Saya</div><p class="text-sm text-gray-400">Kelola semua postingan</p></div></div>
       <i class="bi bi-chevron-right"></i>
     </a>
-  </div>
-</div>
-
-
-<!-- DANGER ZONE -->
-<div class="glass p-8 rounded-3xl border-red-500/30">
-  <h2 class="text-2xl font-bold text-red-400 mb-6 flex items-center gap-2"><i class="bi bi-exclamation-triangle"></i> Danger Zone</h2>
-  <div class="bg-red-600/20 border border-red-500/40 rounded-xl p-6">
-    <p class="text-gray-300 mb-4">Menghapus akun berarti seluruh postingan, komentar, dan data akan hilang permanen.</p>
-    <a href="delete_account.php" class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl inline-flex items-center gap-2 font-semibold">
-      <i class="bi bi-trash"></i> Hapus Akun Permanen
+    <?php if($is_admin || $is_developer): ?>
+    <a href="admin/index.php" class="flex justify-between items-center glass p-4 rounded-xl hover:bg-white/10 transition">
+      <div class="flex items-center gap-3"><i class="bi bi-shield-check text-2xl text-purple-400"></i><div><div class="font-semibold">Panel Admin</div><p class="text-sm text-gray-400">Kelola konten dan pengguna</p></div></div>
+      <i class="bi bi-chevron-right"></i>
     </a>
+    <?php endif; ?>
   </div>
 </div>
-
 </main>
 </body>
 </html>

@@ -40,13 +40,13 @@ if ($current_time - $_SESSION[$resend_time_key] >= $rate_limit_window) {
 }
 
 // Check if rate limit exceeded
-if ($_SESSION[$resend_key] >= $max_attempts) {
-    $response['message'] = 'Terlalu banyak permintaan resend. Silakan coba lagi dalam 1 jam.';
-    $response['type'] = 'warning';
-    $_SESSION['form_response'] = $response;
-    header("Location: ../View/login_register/form_login.php");
-    exit;
-}
+// if ($_SESSION[$resend_key] >= $max_attempts) {
+//     $response['message'] = 'Terlalu banyak permintaan resend. Silakan coba lagi dalam 1 jam.';
+//     $response['type'] = 'warning';
+//     $_SESSION['form_response'] = $response;
+//     header("Location: ../View/login_register/form_login.php");
+//     exit;
+// }
 
 // ============================================
 // GET & VALIDATE INPUT
@@ -143,7 +143,7 @@ $update->close();
 // ============================================
 // SEND EMAIL (via PHPMailer)
 // ============================================
-include 'email_helper.php';
+require __DIR__ . '/email_helper.php';
 
 $email_result = sendResendVerificationEmail($email, $user['username'], $activation_token);
 

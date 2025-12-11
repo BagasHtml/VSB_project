@@ -1,65 +1,57 @@
 <?php
-// ============================================
-// DELETE USER (delete_user.php)
-// Skrip untuk menghapus user berdasarkan ID (metode GET).
-// ============================================
-
 session_start();
-// Pastikan path ke db.php sudah benar, relatif dari lokasi skrip ini (misalnya: admin/delete_user.php)
-require '../../service/db.php'; 
+require_once '../../service/db.php';
 
-// header('Content-Type: text/plain'); // Opsional: untuk memastikan output hanya teks
-
-// ============================================
-// 1. OTORISASI & PROTEKSI
-// ============================================
-
-// A. Check otorisasi: Pastikan user login dan memiliki role 'admin'
-// Catatan: Jika Anda menggunakan role 'developer' juga, tambahkan pengecekan: 
-// if (!isset($_SESSION['user_id']) || ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'developer'))
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin' || $_SESSION['role'] !== 'developer') {
-    http_response_code(403);
-    exit('forbidden'); // Akses ditolak
+// Cek otorisasi admin
+if (
+    !isset($_SESSION['admin_id']) ||
+    !isset($_SESSION['role']) ||
+    ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'developer')
+) {
+    header("Location: admin_login.php");
+    exit();
 }
 
-// B. Pastikan request berisi ID user dan ID tersebut berupa angka
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
-    http_response_code(400);
-    exit('invalid'); // ID tidak valid
+// Cek apakah ID user dikirim
+if (!isset($_GET['id']) || empty($_GET['id'])) {
+    $_SESSION['error'] = "ID User tidak valid.";
+    header("Location: index.php");
+    exit();
 }
 
-$user_id = intval($_GET['id']);
+ $userIdToDelete = $_GET['id'];
+ $currentAdminId = $_SESSION['admin_id'];
 
-// C. Proteksi: admin tidak boleh menghapus dirinya sendiri
-if ($user_id == $_SESSION['user_id']) {
-    http_response_code(403);
-    exit('self-denied'); // Tidak dapat menghapus akun sendiri
+// Cegah admin menghapus dirinya sendiri
+if ($userIdToDelete == $currentAdminId) {
+    $_SESSION['error'] = "Anda tidak dapat menghapus akun Anda sendiri.";
+    header("Location: index.php");
+    exit();
 }
 
-// ============================================
-// 2. EKSEKUSI DELETE
-// ============================================
+// Hapus terkait user dari tabel lain terlebih dahulu (untuk menjaga integritas data)
+// Hapus komentar yang dibuat user
+ $conn->query("DELETE FROM comments WHERE user_id = $userIdToDelete");
 
-try {
-    // Gunakan Prepared Statement untuk mencegah SQL Injection
-    $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $stmt->bind_param("i", $user_id);
+// Hapus like yang diberikan user
+ $conn->query("DELETE FROM post_likes WHERE user_id = $userIdToDelete");
 
-    if ($stmt->execute()) {
-        echo "success"; // Berhasil dihapus
-    } else {
-        // Jika eksekusi kueri gagal (misalnya karena foreign key constraint)
-        http_response_code(500);
-        // echo "failed: " . $stmt->error; // Opsional: untuk debugging
-        echo "failed"; 
-    }
-    $stmt->close();
-    
-} catch (Exception $e) {
-    http_response_code(500);
-    // echo "error: " . $e->getMessage(); // Opsional: untuk debugging
-    echo "error"; 
+// Hapus post yang dibuat user
+ $conn->query("DELETE FROM posts WHERE user_id = $userIdToDelete");
+
+// Sekarang, hapus user itu sendiri
+ $sql = "DELETE FROM users WHERE id = ?";
+ $stmt = $conn->prepare($sql);
+ $stmt->bind_param("i", $userIdToDelete);
+
+if ($stmt->execute()) {
+    $_SESSION['success'] = "User berhasil dihapus.";
+} else {
+    $_SESSION['error'] = "Gagal menghapus user: " . $conn->error;
 }
 
-$conn->close();
-?>
+ $stmt->close();
+ $conn->close();
+
+header("Location: admin_panel.php");
+exit();
