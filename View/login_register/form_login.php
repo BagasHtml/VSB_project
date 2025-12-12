@@ -21,7 +21,6 @@
         $form_response = isset($_SESSION['form_response']) ? $_SESSION['form_response'] : null;
         unset($_SESSION['form_response']);
         
-        // Tampilkan pesan jika ada
         if($form_response):
             $type = htmlspecialchars($form_response['type']);
             $message = htmlspecialchars($form_response['message']);
@@ -74,8 +73,8 @@
                 <a href="../../service/oauth/google_login.php" class="social-btn google" title="Login dengan Google">
                     <i class="bi bi-google"></i> Google
                 </a>
-                <a href="../../service/oauth/facebook_login.php" class="social-btn facebook" title="Login dengan Facebook">
-                    <i class="bi bi-facebook"></i> Facebook
+                <a href="../../service/oauth/discord_login.php" class="social-btn discord" title="Login dengan Discord">
+                    <i class="bi bi-discord"></i> Discord
                 </a>
             </div>
 
@@ -83,6 +82,10 @@
                 Belum punya akun?
                 <a href="form_register.php">Daftar di sini</a>
             </p>
+
+            <p class="switch">
+                Lupa kata sandi?
+                <a href="https://wa.me/6281321720348?text=Permisi min, saya lupa password akun, bisa di bantu min? terimakasih.">Lapor Admin</a>
         </form>
     </div>
 </div>

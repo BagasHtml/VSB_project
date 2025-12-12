@@ -35,13 +35,13 @@ if ($current_time - $_SESSION[$time_key] >= $rate_limit_window) {
     $_SESSION[$time_key] = $current_time;
 }
 
-// if ($_SESSION[$rate_key] >= $max_attempts) {
-//     $response['type'] = 'warning';
-//     $response['message'] = 'Terlalu banyak percobaan login gagal. Coba lagi 15 menit.';
-//     $_SESSION['form_response'] = $response;
-//     header("Location: ../View/login_register/form_login.php");
-//     exit;
-// }
+if ($_SESSION[$rate_key] >= $max_attempts) {
+    $response['type'] = 'warning';
+    $response['message'] = 'Terlalu banyak percobaan login gagal. Coba lagi 15 menit.';
+    $_SESSION['form_response'] = $response;
+    header("Location: ../View/login_register/form_login.php");
+    exit;
+}
 
 
 

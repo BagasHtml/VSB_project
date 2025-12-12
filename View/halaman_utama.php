@@ -50,17 +50,16 @@ if(isset($_GET['read_notif'])) {
   exit;
 }
 
-// Handle delete post - Owner, Admin, Developer can delete
+// Handle delete post
 if(isset($_GET['delete_post_id'])) {
   $post_id = $_GET['delete_post_id'];
   
-  $check = $conn->prepare("SELECT user_id, image FROM posts WHERE id = ?");
+  $check = $conn->prepare("SELECT user_id, image, video FROM posts WHERE id = ?");
   $check->bind_param("i", $post_id);
   $check->execute();
   $post = $check->get_result()->fetch_assoc();
   
   if($post) {
-    // Check if user can delete this post
     $can_delete = ($post['user_id'] == $user_id) || $is_admin || $is_developer;
     
     if($can_delete) {
@@ -69,14 +68,19 @@ if(isset($_GET['delete_post_id'])) {
         unlink("../uploads/" . $post['image']);
       }
       
+      // Delete video if exists
+      if($post['video'] && file_exists("../uploads/" . $post['video'])) {
+        unlink("../uploads/" . $post['video']);
+      }
+      
       // Delete post
       $delete = $conn->prepare("DELETE FROM posts WHERE id = ?");
       $delete->bind_param("i", $post_id);
       $delete->execute();
       
       // Delete related notifications
-      $delete_notif = $conn->prepare("DELETE FROM notifications WHERE post_id = ?");
-      $delete_notif->bind_param("i", $post_id);
+      $delete_notif = $conn->prepare("DELETE FROM notifications WHERE post_id = ? OR comment_id IN (SELECT id FROM comments WHERE post_id = ?)");
+      $delete_notif->bind_param("ii", $post_id, $post_id);
       $delete_notif->execute();
       
       // Delete related likes
@@ -101,28 +105,41 @@ if(isset($_POST['update_post'])) {
   $tags = $_POST['tags'] ?? '';
   $image = $_FILES['image']['name'] ?? '';
   $tmp = $_FILES['image']['tmp_name'] ?? '';
+  $video = $_FILES['video']['name'] ?? '';
+  $tmp_video = $_FILES['video']['tmp_name'] ?? '';
   
-  $check = $conn->prepare("SELECT user_id, image FROM posts WHERE id = ?");
+  $check = $conn->prepare("SELECT user_id, image, video FROM posts WHERE id = ?");
   $check->bind_param("i", $post_id);
   $check->execute();
   $post = $check->get_result()->fetch_assoc();
   
   if($post && $post['user_id'] == $user_id) {
     $old_image = $post['image'];
+    $old_video = $post['video'];
+    $new_image = $old_image;
+    $new_video = $old_video;
     
+    // Handle image upload
     if($image && move_uploaded_file($tmp, "../uploads/" . $image)){
       if($old_image && file_exists("../uploads/" . $old_image)) {
         unlink("../uploads/" . $old_image);
       }
-      
-      $stmt = $conn->prepare("UPDATE posts SET image=?, caption=?, tags=? WHERE id=?");
-      $stmt->bind_param("sssi", $image, $caption, $tags, $post_id);
-    } else {
-      $stmt = $conn->prepare("UPDATE posts SET caption=?, tags=? WHERE id=?");
-      $stmt->bind_param("ssi", $caption, $tags, $post_id);
+      $new_image = $image;
     }
+    
+    // Handle video upload
+    if($video && move_uploaded_file($tmp_video, "../uploads/" . $video)){
+      if($old_video && file_exists("../uploads/" . $old_video)) {
+        unlink("../uploads/" . $old_video);
+      }
+      $new_video = $video;
+    }
+    
+    $stmt = $conn->prepare("UPDATE posts SET image=?, video=?, caption=?, tags=? WHERE id=?");
+    $stmt->bind_param("ssssi", $new_image, $new_video, $caption, $tags, $post_id);
     $stmt->execute();
     
+    // Handle mentions
     preg_match_all('/@(\w+)/', $caption, $mentions);
     if(!empty($mentions[1])) {
       foreach(array_unique($mentions[1]) as $mentioned) {
@@ -156,16 +173,46 @@ if(isset($_POST['upload'])) {
   $tags = $_POST['tags'] ?? '';
   $image = $_FILES['image']['name'] ?? '';
   $tmp = $_FILES['image']['tmp_name'] ?? '';
+  $video = $_FILES['video']['name'] ?? '';
+  $tmp_video = $_FILES['video']['tmp_name'] ?? '';
+  
+  $insert_image = null;
+  $insert_video = null;
 
-  if($image && move_uploaded_file($tmp, "../uploads/" . $image)){
-    $stmt = $conn->prepare("INSERT INTO posts (user_id,image,caption,tags) VALUES(?,?,?,?)");
-    $stmt->bind_param("isss",$user_id,$image,$caption,$tags);
-  } else {
-    $stmt = $conn->prepare("INSERT INTO posts (user_id,caption,tags) VALUES(?,?,?)");
-    $stmt->bind_param("iss",$user_id,$caption,$tags);
-  }
-  $stmt->execute();
-  $post_id = $conn->insert_id;
+  // --- PROSES UPLOAD GAMBAR ---
+$insert_image = null;
+
+if (!empty($_FILES['image']['name'])) {
+    $image = time() . "_" . $_FILES['image']['name'];
+    $tmp   = $_FILES['image']['tmp_name'];
+
+    if (move_uploaded_file($tmp, "../uploads/" . $image)) {
+        $insert_image = $image;
+    }
+}
+
+// --- PROSES UPLOAD VIDEO ---
+$insert_video = null;
+
+if (!empty($_FILES['video']['name'])) {
+    $video = time() . "_" . $_FILES['video']['name'];
+    $tmp_video = $_FILES['video']['tmp_name'];
+
+    if (move_uploaded_file($tmp_video, "../uploads/" . $video)) {
+        $insert_video = $video;
+    }
+}
+
+// --- DEFAULT VALUE AGAR TIDAK NULL ---
+if ($insert_image === null) $insert_image = '';
+if ($insert_video === null) $insert_video = '';
+
+
+// --- INSERT KE DATABASE ---
+$stmt = $conn->prepare("INSERT INTO posts (user_id, image, video, caption, tags) VALUES(?, ?, ?, ?, ?)");
+$stmt->bind_param("issss", $user_id, $insert_image, $insert_video, $caption, $tags);
+$stmt->execute();
+$post_id = $conn->insert_id;
 
   preg_match_all('/@(\w+)/',$caption,$mentions);
   if(!empty($mentions[1])) {
@@ -206,7 +253,6 @@ if(isset($_POST['like_post'])){
     $owner=$ownerQ->get_result()->fetch_assoc();
 
     if($owner['user_id'] != $user_id){
-      // Check if notification already exists
       $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='like'");
       $notif_check->bind_param("iii", $owner['user_id'], $user_id, $post_id);
       $notif_check->execute();
@@ -357,7 +403,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
 <header class="fixed top-0 left-0 right-0 z-50 bg-gray-900/80 backdrop-blur-md border-b border-white/10">
   <nav class="max-w-7xl mx-auto flex justify-between items-center py-3 px-3 lg:px-8">
     <div class="text-xl md:text-3xl font-bold">
-      <span class="text-gray-100">Knowledge</span><span class="gradient-text">Battle</span>
+       <span class="text-gray-100">Knowledge</span><span class="gradient-text">Battle</span>
     </div>
     
     <!-- Weather & Time -->
@@ -374,7 +420,8 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
     </div>
 
     <div class="flex gap-2 items-center">
-      <!-- Notifications -->
+     
+     <!-- Notifications -->
       <div class="relative">
         <button onclick="toggleNotif()" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 relative">
           <i class="bi bi-bell text-lg"></i>
@@ -393,7 +440,21 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           
           <?php if(count($notif_rows) > 0): ?>
             <div class="space-y-2">
-              <?php foreach($notif_rows as $notif): ?>
+              <?php foreach($notif_rows as $notif): 
+                $type_class = 'notif-like';
+                $type_icon = 'heart-fill';
+                $type_text = 'Like';
+                
+                if($notif['type'] === 'comment') {
+                  $type_class = 'notif-comment';
+                  $type_icon = 'chat-dots-fill';
+                  $type_text = 'Komentar';
+                } elseif($notif['type'] === 'mention') {
+                  $type_class = 'notif-mention';
+                  $type_icon = 'at';
+                  $type_text = 'Tag';
+                }
+              ?>
                 <div class="p-3 rounded-xl transition group <?= $notif['is_read'] == 0 ? 'notif-unread hover:bg-blue-500/20' : 'notif-read hover:bg-white/5' ?>">
                   <div class="flex items-start justify-between gap-2">
                     <div class="flex items-start gap-2 flex-1">
@@ -406,7 +467,13 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
                         </div>
                       <?php endif; ?>
                       <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold text-blue-400"><?= htmlspecialchars($notif['from_username']) ?></p>
+                        <div class="flex items-center gap-2 mb-1">
+                          <p class="text-sm font-semibold text-blue-400"><?= htmlspecialchars($notif['from_username']) ?></p>
+                          <span class="notif-type-badge <?= $type_class ?>">
+                            <i class="bi bi-<?= $type_icon ?>"></i>
+                            <?= $type_text ?>
+                          </span>
+                        </div>
                         <p class="text-sm text-gray-200 break-words"><?= htmlspecialchars($notif['message']) ?></p>
                         <span class="text-xs text-gray-500"><?= date('d M, H:i', strtotime($notif['created_at'])) ?></span>
                       </div>
@@ -525,13 +592,24 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <div id="mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
       </div>
       
-      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-red-500 transition cursor-pointer text-sm md:text-base upload-box">
+      <!-- Image Upload -->
+      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-red-500 transition cursor-pointer text-sm md:text-base upload-box image-upload-box">
         <div class="flex items-center gap-2">
           <i class="bi bi-image text-xl md:text-2xl text-red-500"></i>
           <span class="text-gray-400">Upload Gambar (Optional)</span>
         </div>
         <input type="file" name="image" class="hidden upload-input" accept="image/*" id="main_image_input">
         <div id="main_image_preview" class="mt-2"></div>
+      </div>
+
+      <!-- Video Upload -->
+      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-purple-500 transition cursor-pointer text-sm md:text-base upload-box video-upload-box">
+        <div class="flex items-center gap-2">
+          <i class="bi bi-play-circle text-xl md:text-2xl text-purple-500"></i>
+          <span class="text-gray-400">Upload Video (Optional)</span>
+        </div>
+        <input type="file" name="video" class="hidden" accept="video/*" id="main_video_input">
+        <div id="main_video_preview" class="mt-2"></div>
       </div>
       
       <input type="text" name="tags" placeholder="#tag1 #tag2" 
@@ -552,9 +630,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       $caption = htmlspecialchars($post['caption']);
       $caption = preg_replace('/@(\w+)/', '<span class="mention">@$1</span>', $caption);
       
-      // Check if user can delete this post
       $can_delete = ($post['user_id'] == $user_id) || $is_admin || $is_developer;
-      // Check if user can pin this post
       $can_pin = $is_admin || $is_developer;
     ?>
       <div class="glass p-4 md:p-8 rounded-2xl md:rounded-3xl hover:border-red-500/30 transition relative <?= $post['is_pinned'] ? 'ring-2 ring-yellow-500/30' : '' ?>">
@@ -598,6 +674,15 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </div>
         <?php endif; ?>
 
+        <?php if($post['video']): ?>
+          <div class="mb-3 md:mb-4">
+            <video src="../uploads/<?=htmlspecialchars($post['video'])?>" class="w-full rounded-xl md:rounded-2xl hover:scale-[1.02] transition" controls>
+              Peramban Anda tidak mendukung video HTML5.
+            </video>
+            <p class="text-xs text-gray-400 mt-2 px-1 flex items-center gap-1"><i class="bi bi-play-circle"></i> <?=htmlspecialchars($post['video'])?></p>
+          </div>
+        <?php endif; ?>
+
         <p class="text-gray-200 mb-3 md:mb-4 leading-relaxed text-sm md:text-base"><?=$caption?></p>
 
         <!-- Tags -->
@@ -607,7 +692,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           $tags = array_filter(explode(' ', $tags_string));
           foreach($tags as $tag):
           ?>
-            <a href="halama_utama.php?tag=<?=urlencode($tag)?>" 
+            <a href="halaman_utama.php?tag=<?=urlencode($tag)?>" 
               class="text-red-400 text-xs bg-red-900/30 hover:bg-red-900/50 px-2 py-0.5 md:px-3 md:py-1 rounded-full transition">
               <?=htmlspecialchars($tag)?>
             </a>
@@ -634,7 +719,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </button>
           
           <?php if($post['user_id'] == $user_id): ?>
-            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, `<?= str_replace('`', '\`', htmlspecialchars($post['caption'])) ?>`, `<?= htmlspecialchars($post['tags']) ?>`, '<?= htmlspecialchars($post['image']) ?>')" 
+            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, `<?= str_replace('`', '\`', htmlspecialchars($post['caption'])) ?>`, `<?= htmlspecialchars($post['tags']) ?>`, '<?= htmlspecialchars($post['image']) ?>', '<?= htmlspecialchars($post['video']) ?>')" 
               class="flex items-center gap-1 md:gap-2 glass hover:bg-blue-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
               <i class="bi bi-pencil"></i>
               <span class="hidden md:inline">Edit</span>
@@ -685,6 +770,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <div id="edit-mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
       </div>
       
+      <!-- Edit Image -->
       <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-blue-500 transition cursor-pointer text-sm md:text-base edit-upload-box">
         <div class="flex items-center gap-2">
           <i class="bi bi-image text-xl md:text-2xl text-blue-500"></i>
@@ -692,6 +778,16 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         </div>
         <input type="file" name="image" class="hidden" accept="image/*" id="edit_image_input">
         <div id="current_image_info" class="text-xs text-gray-500 mt-2"></div>
+      </div>
+
+      <!-- Edit Video -->
+      <div class="border-2 border-dashed border-white/20 p-3 md:p-4 rounded-xl hover:border-purple-500 transition cursor-pointer text-sm md:text-base edit-video-upload-box">
+        <div class="flex items-center gap-2">
+          <i class="bi bi-play-circle text-xl md:text-2xl text-purple-500"></i>
+          <span class="text-gray-400">Ganti Video (Optional)</span>
+        </div>
+        <input type="file" name="video" class="hidden" accept="video/*" id="edit_video_input">
+        <div id="current_video_info" class="text-xs text-gray-500 mt-2"></div>
       </div>
       
       <input type="text" name="tags" id="edit_tags" placeholder="#tag1 #tag2" 
@@ -1274,6 +1370,27 @@ document.addEventListener('click', function(e) {
   }
   if(!editTextarea.contains(e.target) && !editDropdown.contains(e.target)) {
     editDropdown.classList.add('hidden');
+  }
+});
+
+const videoUploadBox = document.querySelector('.video-upload-box');
+const videoInput = document.getElementById('main_video_input');
+const videoPreview = document.getElementById('main_video_preview');
+
+videoUploadBox.addEventListener('click', () => videoInput.click());
+videoInput.addEventListener('change', function(e) {
+  const file = this.files[0];
+  if(file && file.type.startsWith('video/')) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      videoPreview.innerHTML = `
+        <div class="mt-2">
+          <video src="${event.target.result}" class="video-preview rounded-xl" controls style="max-height: 200px;"></video>
+          <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
+        </div>
+      `;
+    };
+    reader.readAsDataURL(file);
   }
 });
 </script>

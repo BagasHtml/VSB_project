@@ -171,12 +171,24 @@ $user = $stmt->get_result()->fetch_assoc();
       </div>
 
       <!-- Submit Button -->
-      <button type="submit" name="change_password" 
-        class="w-full bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 px-6 py-4 rounded-xl font-semibold transition flex items-center justify-center gap-2">
-        <i class="bi bi-check-lg"></i>
-        Simpan Password Baru
-      </button>
-    </form>
+      <div class="max-w-md mx-auto mt-10 p-6 rounded-xl shadow-md">
+        <form action="" method="post" class="space-y-4">
+          <button type="submit" name="change_password" 
+            class="w-full bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 px-6 py-4 rounded-xl font-semibold transition flex items-center justify-center gap-2">
+            <i class="bi bi-check-lg"></i>
+            Simpan Password Baru
+          </button>
+        </form>
+
+        <div class="mt-6 text-center text-gray-500 bg-white border rounded-lg">
+          <div class="mb-2">
+            <i class="bi bi-person-badge-fill text-3xl"></i>
+          </div>
+          <p class="text-sm">
+            Lupa password lama? <a href="https://wa.me/6281321720348?text=halo min, saya lupa password akun saya. mohon bantuannya, terimakasih." class="text-green-600 hover:underline">Lapor Admin</a>.
+          </p>
+        </div>
+      </div>
 
     <!-- Security Tips -->
     <div class="mt-8 pt-8 border-t border-white/10">
