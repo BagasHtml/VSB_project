@@ -1,13 +1,12 @@
-<?php 
-$local = "localhost";
-$user = "root";
-$pass = "";
-$dbs = "VSB";
+<?php
+$local = "127.0.0.1";
+$user  = "root";
+$pass  = "";
+$dbs   = "vsb";
 
 $conn = mysqli_connect($local, $user, $pass, $dbs);
 
-if ($conn->connect_error) {
-    echo "Koneksi gagal";
-    die();
+if (!$conn) {
+    die("Koneksi gagal: " . mysqli_connect_error());
 }
 ?>

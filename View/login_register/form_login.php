@@ -1,3 +1,4 @@
+<?php session_start(); ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -13,11 +14,7 @@
     <div class="form-box">
         <h2><i class="bi bi-shield-check"></i> Masuk</h2>
         <p class="form-subtitle">Selamat kembali ke Knowledge Battle</p>
-
-        <?php
-        session_start();
-        
-        // Ambil pesan dari session
+        <?php        
         $form_response = isset($_SESSION['form_response']) ? $_SESSION['form_response'] : null;
         unset($_SESSION['form_response']);
         
@@ -32,10 +29,8 @@
             <div style="flex: 1;">
                 <?php echo $message; ?>
                 
-                <!-- Jika belum verifikasi, tawarkan untuk kirim ulang -->
                 <?php 
                 if($type === 'warning' && strpos($message, 'belum diverifikasi') !== false):
-                    // Ambil email dari form login (yang baru saja di-submit)
                     $last_email = isset($_SESSION['last_login_email']) ? $_SESSION['last_login_email'] : '';
                 ?>
                     <div style="margin-top: 10px;">

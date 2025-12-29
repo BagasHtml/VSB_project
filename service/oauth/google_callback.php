@@ -14,43 +14,54 @@ $client->addScope(['email','profile','openid']);
 
 // ===== CEK TOKEN DARI GOOGLE =====
 if (isset($_GET['code'])) {
-    $token = $client->fetchAccessTokenWithAuthCode($_GET['code']);
-
-    if (isset($token['error'])) {
-        echo "<h3 style='color:red'>TOKEN ERROR:</h3>";
-        var_dump($token);
+    try {
+        $token = $client->fetchAccessTokenWithAuthCode($_GET['code']);
+        
+        if (isset($token['error'])) {
+            session_destroy();
+            header("Location: ../../View/login.php?error=oauth_failed");
+            exit;
+        }
+        
+        $client->setAccessToken($token);
+        $oauth = new Google\Service\Oauth2($client);
+        $g = $oauth->userinfo->get();
+        
+        // === CEK user di database ===
+        $find = $conn->prepare("SELECT id FROM users WHERE google_id = ?");
+        $find->bind_param("s", $g->id);
+        $find->execute();
+        $user = $find->get_result()->fetch_assoc();
+        
+        // Jika baru pertama kali login → buat akun otomatis
+        if (!$user) {
+            // Generate random password untuk OAuth users (tidak akan dipakai)
+            $random_password = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
+            
+            $ins = $conn->prepare("INSERT INTO users (google_id, username, email, profile_pic, password, level) VALUES (?, ?, ?, ?, ?, 1)");
+            $ins->bind_param("sssss", $g->id, $g->name, $g->email, $g->picture, $random_password);
+            $ins->execute();
+            $user_id = $ins->insert_id;
+        } else {
+            $user_id = $user['id'];
+        }
+        
+        // ====== Simpan session =====
+        $_SESSION['user_id'] = $user_id;
+        $_SESSION['email']   = $g->email;
+        $_SESSION['name']    = $g->name;
+        $_SESSION['avatar']  = $g->picture;
+        
+        header("Location: ../../View/halaman_utama.php");
+        exit;
+        
+    } catch (Exception $e) {
+        session_destroy();
+        header("Location: ../../View/login.php?error=" . urlencode($e->getMessage()));
         exit;
     }
-
-    $client->setAccessToken($token);
-    $oauth = new Google\Service\Oauth2($client);
-    $g = $oauth->userinfo->get();
-
-    // === CEK user di database ===
-    $find = $conn->prepare("SELECT id FROM users WHERE google_id = ?");
-    $find->bind_param("s", $g->id);
-    $find->execute();
-    $user = $find->get_result()->fetch_assoc();
-
-    // Jika baru pertama kali login → buat akun otomatis
-    if (!$user) {
-        $ins = $conn->prepare("INSERT INTO users (google_id, username, email, profile_pic, level) VALUES (?, ?, ?, ?, 1)");
-        $ins->bind_param("ssss", $g->id, $g->name, $g->email, $g->picture);
-        $ins->execute();
-        $user_id = $ins->insert_id;
-    } else {
-        $user_id = $user['id'];
-    }
-
-    // ====== Simpan session biar halaman utama kebaca =====
-    $_SESSION['user_id'] = $user_id;
-    $_SESSION['email']   = $g->email;
-    $_SESSION['name']    = $g->name;
-    $_SESSION['avatar']  = $g->picture;
-
-    header("Location: ../../View/halaman_utama.php");
-    exit;
 }
 
-echo "INVALID ACCESS — tidak ada authorization code.";
+header("Location: ../../View/login.php?error=no_code");
 exit;
+?>

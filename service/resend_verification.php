@@ -1,7 +1,4 @@
 <?php
-// ============================================
-// RESEND VERIFICATION EMAIL (resend_verification.php)
-// ============================================
 session_start();
 include 'db.php';
 

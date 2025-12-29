@@ -27,30 +27,29 @@ if (!$user) {
  $is_admin = (strpos(strtolower($user['title']), 'admin') !== false);
  $is_developer = ($user['level'] >= 50);
 
-// Handle delete notification
+// --- HANDLE ACTIONS ---
+
+// 1. Delete Notification
 if(isset($_GET['delete_notif_id'])) {
   $notif_id = $_GET['delete_notif_id'];
-  
   $delete = $conn->prepare("DELETE FROM notifications WHERE id = ? AND user_id = ?");
   $delete->bind_param("ii", $notif_id, $user_id);
   $delete->execute();
-  
   header("Location: halaman_utama.php"); 
   exit;
 }
 
-// Handle mark notification as read
-if(isset($_GET['read_notif'])) {
-  $notif_id = $_GET['read_notif'];
-  $update = $conn->prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?");
+// 2. Mark Notification as Read (Optional GET handler)
+if(isset($_GET['read_notif_id'])) {
+  $notif_id = $_GET['read_notif_id'];
+  $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
   $update->bind_param("ii", $notif_id, $user_id);
   $update->execute();
-  
   header("Location: halaman_utama.php"); 
   exit;
 }
 
-// Handle delete post
+// 3. Delete Post
 if(isset($_GET['delete_post_id'])) {
   $post_id = $_GET['delete_post_id'];
   
@@ -63,42 +62,42 @@ if(isset($_GET['delete_post_id'])) {
     $can_delete = ($post['user_id'] == $user_id) || $is_admin || $is_developer;
     
     if($can_delete) {
-      // Delete image if exists
-      if($post['image'] && file_exists("../uploads/" . $post['image'])) {
-        unlink("../uploads/" . $post['image']);
-      }
+      // 1. Delete comments
+      $delete_comments = $conn->prepare("DELETE FROM comments WHERE post_id = ?");
+      $delete_comments->bind_param("i", $post_id);
+      $delete_comments->execute();
       
-      // Delete video if exists
-      if($post['video'] && file_exists("../uploads/" . $post['video'])) {
-        unlink("../uploads/" . $post['video']);
-      }
-      
-      // Delete post
-      $delete = $conn->prepare("DELETE FROM posts WHERE id = ?");
-      $delete->bind_param("i", $post_id);
-      $delete->execute();
-      
-      // Delete related notifications
-      $delete_notif = $conn->prepare("DELETE FROM notifications WHERE post_id = ? OR comment_id IN (SELECT id FROM comments WHERE post_id = ?)");
-      $delete_notif->bind_param("ii", $post_id, $post_id);
-      $delete_notif->execute();
-      
-      // Delete related likes
+      // 2. Delete post_likes
       $delete_likes = $conn->prepare("DELETE FROM post_likes WHERE post_id = ?");
       $delete_likes->bind_param("i", $post_id);
       $delete_likes->execute();
       
-      // Delete related comments
-      $delete_comments = $conn->prepare("DELETE FROM comments WHERE post_id = ?");
-      $delete_comments->bind_param("i", $post_id);
-      $delete_comments->execute();
+      // 3. Delete notifications
+      $delete_notif = $conn->prepare("DELETE FROM notifications WHERE post_id = ? OR comment_id IN (SELECT id FROM comments WHERE post_id = ?)");
+      $delete_notif->bind_param("ii", $post_id, $post_id);
+      $delete_notif->execute();
+      
+      // 4. Delete image file
+      if($post['image'] && file_exists("../uploads/" . $post['image'])) {
+        unlink("../uploads/" . $post['image']);
+      }
+      
+      // 5. Delete video file
+      if($post['video'] && file_exists("../uploads/" . $post['video'])) {
+        unlink("../uploads/" . $post['video']);
+      }
+      
+      // 6. Delete post
+      $delete = $conn->prepare("DELETE FROM posts WHERE id = ?");
+      $delete->bind_param("i", $post_id);
+      $delete->execute();
     }
   }
-  
   header("Location: halaman_utama.php"); 
   exit;
-}
+}     
 
+// 4. Update Post
 if(isset($_POST['update_post'])) {
   $post_id = $_POST['post_id'];
   $caption = $_POST['caption'];
@@ -149,6 +148,7 @@ if(isset($_POST['update_post'])) {
         $m_user=$check->get_result()->fetch_assoc();
 
         if($m_user && $m_user['id'] != $user_id){
+          // Check existing notif to avoid duplicates
           $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='mention'");
           $notif_check->bind_param("iii", $m_user['id'], $user_id, $post_id);
           $notif_check->execute();
@@ -162,58 +162,45 @@ if(isset($_POST['update_post'])) {
         }
       }
     }
-    
     header("Location: halaman_utama.php"); 
     exit;
   }
 }
 
+// 5. Create Post (Upload)
 if(isset($_POST['upload'])) {
   $caption = $_POST['caption'];
   $tags = $_POST['tags'] ?? '';
-  $image = $_FILES['image']['name'] ?? '';
-  $tmp = $_FILES['image']['tmp_name'] ?? '';
-  $video = $_FILES['video']['name'] ?? '';
-  $tmp_video = $_FILES['video']['tmp_name'] ?? '';
   
+  // Handle Image
   $insert_image = null;
+  if (!empty($_FILES['image']['name'])) {
+      $image = time() . "_" . $_FILES['image']['name'];
+      $tmp   = $_FILES['image']['tmp_name'];
+      if (move_uploaded_file($tmp, "../uploads/" . $image)) {
+          $insert_image = $image;
+      }
+  }
+  if ($insert_image === null) $insert_image = '';
+
+  // Handle Video
   $insert_video = null;
+  if (!empty($_FILES['video']['name'])) {
+      $video = time() . "_" . $_FILES['video']['name'];
+      $tmp_video = $_FILES['video']['tmp_name'];
+      if (move_uploaded_file($tmp_video, "../uploads/" . $video)) {
+          $insert_video = $video;
+      }
+  }
+  if ($insert_video === null) $insert_video = '';
 
-  // --- PROSES UPLOAD GAMBAR ---
-$insert_image = null;
+  // Insert to Database
+  $stmt = $conn->prepare("INSERT INTO posts (user_id, image, video, caption, tags) VALUES(?, ?, ?, ?, ?)");
+  $stmt->bind_param("issss", $user_id, $insert_image, $insert_video, $caption, $tags);
+  $stmt->execute();
+  $post_id = $conn->insert_id;
 
-if (!empty($_FILES['image']['name'])) {
-    $image = time() . "_" . $_FILES['image']['name'];
-    $tmp   = $_FILES['image']['tmp_name'];
-
-    if (move_uploaded_file($tmp, "../uploads/" . $image)) {
-        $insert_image = $image;
-    }
-}
-
-// --- PROSES UPLOAD VIDEO ---
-$insert_video = null;
-
-if (!empty($_FILES['video']['name'])) {
-    $video = time() . "_" . $_FILES['video']['name'];
-    $tmp_video = $_FILES['video']['tmp_name'];
-
-    if (move_uploaded_file($tmp_video, "../uploads/" . $video)) {
-        $insert_video = $video;
-    }
-}
-
-// --- DEFAULT VALUE AGAR TIDAK NULL ---
-if ($insert_image === null) $insert_image = '';
-if ($insert_video === null) $insert_video = '';
-
-
-// --- INSERT KE DATABASE ---
-$stmt = $conn->prepare("INSERT INTO posts (user_id, image, video, caption, tags) VALUES(?, ?, ?, ?, ?)");
-$stmt->bind_param("issss", $user_id, $insert_image, $insert_video, $caption, $tags);
-$stmt->execute();
-$post_id = $conn->insert_id;
-
+  // Handle Mentions
   preg_match_all('/@(\w+)/',$caption,$mentions);
   if(!empty($mentions[1])) {
     foreach(array_unique($mentions[1]) as $mentioned) {
@@ -233,6 +220,7 @@ $post_id = $conn->insert_id;
   header("Location: halaman_utama.php"); exit;
 }
 
+// 6. Like Post
 if(isset($_POST['like_post'])){
   $post_id=$_POST['post_id'];
 
@@ -241,18 +229,22 @@ if(isset($_POST['like_post'])){
   $check->execute();
 
   if($check->get_result()->num_rows>0){
+    // Unlike
     $stmt=$conn->prepare("DELETE FROM post_likes WHERE post_id=? AND user_id=?");
     $stmt->bind_param("ii",$post_id,$user_id);
   } else {
+    // Like
     $stmt=$conn->prepare("INSERT INTO post_likes(post_id,user_id) VALUES(?,?)");
     $stmt->bind_param("ii",$post_id,$user_id);
 
+    // Notify Owner
     $ownerQ=$conn->prepare("SELECT user_id FROM posts WHERE id=?");
     $ownerQ->bind_param("i",$post_id);
     $ownerQ->execute();
     $owner=$ownerQ->get_result()->fetch_assoc();
 
     if($owner['user_id'] != $user_id){
+      // Check duplicate notif
       $notif_check=$conn->prepare("SELECT id FROM notifications WHERE user_id=? AND from_user_id=? AND post_id=? AND type='like'");
       $notif_check->bind_param("iii", $owner['user_id'], $user_id, $post_id);
       $notif_check->execute();
@@ -269,6 +261,8 @@ if(isset($_POST['like_post'])){
   header("Location: halaman_utama.php"); exit;
 }
 
+// --- FETCH DATA ---
+
  $posts = $conn->query("
  SELECT posts.*, users.username, users.title, users.level, users.profile_pic,
  (SELECT COUNT(*) FROM comments WHERE post_id=posts.id) AS comment_count,
@@ -282,8 +276,11 @@ if(isset($_POST['like_post'])){
  FROM notifications n JOIN users u ON n.from_user_id=u.id
  WHERE n.user_id=$user_id ORDER BY n.is_read ASC, n.created_at DESC LIMIT 20
 ");
- $unread_count = 0;
+
+// Init arrays
  $notif_rows = [];
+ $unread_count = 0;
+
 while($notif = $notifs->fetch_assoc()) {
   $notif_rows[] = $notif;
   if($notif['is_read'] == 0) $unread_count++;
@@ -395,6 +392,20 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
   .notif-read {
     opacity: 0.7;
   }
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1f2937; 
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #4b5563; 
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6b7280; 
+  }
 </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white min-h-screen">
@@ -430,7 +441,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           <?php endif; ?>
         </button>
         
-        <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-96 glass rounded-2xl p-4 max-h-96 overflow-y-auto shadow-2xl">
+        <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 sm:w-96 glass rounded-2xl p-4 max-h-96 overflow-y-auto shadow-2xl">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-bold text-lg">Notifikasi</h3>
             <?php if($unread_count > 0): ?>
@@ -469,7 +480,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
                           <p class="text-sm font-semibold text-blue-400"><?= htmlspecialchars($notif['from_username']) ?></p>
-                          <span class="notif-type-badge <?= $type_class ?>">
+                          <span class="notif-type-badge <?= $type_class ?> flex items-center gap-1 text-xs px-2 py-0.5 bg-white/5 rounded-full text-gray-300">
                             <i class="bi bi-<?= $type_icon ?>"></i>
                             <?= $type_text ?>
                           </span>
@@ -482,7 +493,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
                     <!-- Action Buttons -->
                     <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
                       <?php if($notif['is_read'] == 0): ?>
-                        <a href="?read_notif=<?= $notif['id'] ?>" 
+                        <a href="?read_notif_id=<?= $notif['id'] ?>" 
                            title="Tandai dibaca"
                            class="p-1.5 hover:bg-green-600/20 rounded transition">
                           <i class="bi bi-check-circle text-green-400 text-sm"></i>
@@ -535,11 +546,11 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
         <?php endif; ?>
       </div>
 
-      <a href="../index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
+      <a href="../index.php" class="glass hover:bg-red-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm" title="Logout">
         <i class="bi bi-box-arrow-right"></i>
       </a>
       
-      <a href="settings.php" class="glass hover:bg-blue-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm">
+      <a href="settings.php" class="glass hover:bg-blue-600/20 transition px-3 py-2 rounded-full flex items-center gap-2 text-sm" title="Settings">
         <i class="bi bi-gear"></i>
       </a>
     </div>
@@ -589,7 +600,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
       <div class="relative">
         <textarea name="caption" id="caption" placeholder="Tulis diskusi... (@ untuk mention)" 
           class="w-full border border-white/10 p-3 md:p-4 rounded-xl bg-gray-900/50 focus:outline-none focus:border-red-500 transition min-h-[100px] text-sm md:text-base" required></textarea>
-        <div id="mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1"></div>
+        <div id="mention-dropdown" class="hidden absolute z-10 glass rounded-xl p-2 w-64 mention-dropdown mt-1 shadow-xl"></div>
       </div>
       
       <!-- Image Upload -->
@@ -719,7 +730,7 @@ while($u=$all->fetch_assoc()){ $users_list[]=$u; };
           </button>
           
           <?php if($post['user_id'] == $user_id): ?>
-            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, `<?= str_replace('`', '\`', htmlspecialchars($post['caption'])) ?>`, `<?= htmlspecialchars($post['tags']) ?>`, '<?= htmlspecialchars($post['image']) ?>', '<?= htmlspecialchars($post['video']) ?>')" 
+            <button type="button" onclick="openEditModal(<?= $post['id'] ?>, `<?= str_replace('`', '\`', htmlspecialchars($post['caption'])) ?>`, `<?= htmlspecialchars($post['tags']) ?>`, `<?= htmlspecialchars($post['image']) ?>`, `<?= htmlspecialchars($post['video']) ?>`)" 
               class="flex items-center gap-1 md:gap-2 glass hover:bg-blue-600/20 px-3 py-1.5 md:px-4 md:py-2 rounded-full transition text-xs md:text-base">
               <i class="bi bi-pencil"></i>
               <span class="hidden md:inline">Edit</span>
@@ -838,9 +849,12 @@ document.querySelectorAll('.pin-btn').forEach(btn => {
           if(span) span.textContent = 'Pin';
         }
         
+        // Small delay to show visual feedback before reload
         setTimeout(() => {
           location.reload();
         }, 300);
+      } else {
+        console.error('Error pinning post:', data.message);
       }
     } catch(error) {
       console.error('Error:', error);
@@ -848,30 +862,32 @@ document.querySelectorAll('.pin-btn').forEach(btn => {
   });
 });
 
-// Upload Preview untuk Main Form
+// Upload Preview Main Form
 const uploadBox = document.querySelector('.upload-box');
 const uploadInput = document.getElementById('main_image_input');
 const uploadPreview = document.getElementById('main_image_preview');
 
-uploadBox.addEventListener('click', () => uploadInput.click());
-uploadInput.addEventListener('change', function(e) {
-  const file = this.files[0];
-  if(file && file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      uploadPreview.innerHTML = `
-        <div class="mt-2">
-          <img src="${event.target.result}" class="image-preview rounded-xl" alt="Preview">
-          <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
-        </div>
-      `;
-    };
-    reader.readAsDataURL(file);
-  }
-});
+if(uploadBox && uploadInput) {
+    uploadBox.addEventListener('click', () => uploadInput.click());
+    uploadInput.addEventListener('change', function(e) {
+      const file = this.files[0];
+      if(file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          uploadPreview.innerHTML = `
+            <div class="mt-2">
+              <img src="${event.target.result}" class="image-preview rounded-xl" alt="Preview">
+              <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
+            </div>
+          `;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+}
 
 // Edit Modal Functions
-function openEditModal(postId, caption, tags, image) {
+function openEditModal(postId, caption, tags, image, video) {
   document.getElementById('edit_post_id').value = postId;
   document.getElementById('edit_caption').value = caption;
   document.getElementById('edit_tags').value = tags;
@@ -890,6 +906,21 @@ function openEditModal(postId, caption, tags, image) {
   } else {
     imageInfo.innerHTML = '<p class="text-red-400"><i class="bi bi-exclamation-circle"></i> Tidak ada gambar</p>';
   }
+
+  const videoInfo = document.getElementById('current_video_info');
+  if(video) {
+      videoInfo.innerHTML = `
+      <div class="flex items-center gap-2 text-gray-300 mt-2">
+        <div class="bg-gray-700 p-2 rounded"><i class="bi bi-play-fill"></i></div>
+        <div>
+          <p class="text-xs font-semibold">${video}</p>
+          <p class="text-xs text-gray-500">Upload file baru untuk mengganti</p>
+        </div>
+      </div>
+    `;
+  } else {
+      if(!image) videoInfo.innerHTML = ''; // Clear if empty
+  }
   
   document.getElementById('editModal').classList.add('active');
 }
@@ -902,38 +933,39 @@ function closeEditModal() {
 const editBox = document.querySelector('.edit-upload-box');
 const editImageInput = document.getElementById('edit_image_input');
 
-editBox.addEventListener('click', () => editImageInput.click());
-editImageInput.addEventListener('change', function(e) {
-  const file = this.files[0];
-  const imageInfo = document.getElementById('current_image_info');
-  
-  if(file && file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      imageInfo.innerHTML = `
-        <div class="mt-2">
-          <img src="${event.target.result}" class="w-32 h-20 rounded object-cover">
-          <p class="text-xs text-green-400 mt-1"><i class="bi bi-check-circle-fill"></i> ${file.name} (akan diganti)</p>
-        </div>
-      `;
-    };
-    reader.readAsDataURL(file);
-  }
-});
+if(editBox && editImageInput) {
+    editBox.addEventListener('click', () => editImageInput.click());
+    editImageInput.addEventListener('change', function(e) {
+      const file = this.files[0];
+      const imageInfo = document.getElementById('current_image_info');
+      
+      if(file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          imageInfo.innerHTML = `
+            <div class="mt-2">
+              <img src="${event.target.result}" class="w-32 h-20 rounded object-cover">
+              <p class="text-xs text-green-400 mt-1"><i class="bi bi-check-circle-fill"></i> ${file.name} (akan diganti)</p>
+            </div>
+          `;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+}
 
 // Share Post Function
-// Share Post Function - Improved
 async function sharePost(postId) {
   // Check Native Share API support
   if(navigator.share) {
     try {
-      const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-      const username = postElement.querySelector('.font-bold').textContent;
+      const postElement = document.querySelector(`button[onclick="sharePost(${postId})"]`).closest('.glass'); 
+      // Fallback to generic if specific element logic is complex
       const url = window.location.href.split('?')[0] + '?post_id=' + postId;
       
       await navigator.share({
         title: 'Knowledge Battle - Diskusi Menarik',
-        text: `Lihat postingan dari ${username} di Knowledge Battle Forum!`,
+        text: `Lihat postingan menarik di Knowledge Battle Forum!`,
         url: url
       });
       return;
@@ -957,7 +989,6 @@ function showShareModal(postId) {
   modal.style.zIndex = '9999';
   
   const postUrl = window.location.href.split('?')[0] + '?post_id=' + postId;
-  const currentPageUrl = window.location.href;
   
   modal.innerHTML = `
     <div class="modal-content max-w-sm">
@@ -1021,10 +1052,6 @@ function showShareModal(postId) {
       </div>
       
       <!-- Email Section -->
-      <p class="text-xs text-gray-400 mb-3 flex items-center gap-2">
-        <i class="bi bi-envelope"></i>
-        Bagikan via Email
-      </p>
       <button onclick="shareViaEmail('${postUrl}')" 
               class="w-full glass hover:bg-white/10 px-4 py-3 rounded-xl text-white font-semibold transition flex items-center justify-center gap-2">
         <i class="bi bi-envelope-fill text-orange-400"></i>
@@ -1041,11 +1068,6 @@ function showShareModal(postId) {
       closeShareModal();
     }
   });
-  
-  // Close with Escape key
-  document.addEventListener('keydown', function(e) {
-    if(e.key === 'Escape') closeShareModal();
-  }, { once: true });
 }
 
 function copyShareLink(url) {
@@ -1095,7 +1117,8 @@ function shareViaEmail(url) {
 function closeShareModal() {
   const modal = document.getElementById('shareModal');
   if(modal) {
-    modal.style.animation = 'fadeOut 0.3s ease-out';
+    modal.style.opacity = '0';
+    modal.style.transition = 'opacity 0.3s ease-out';
     setTimeout(() => modal.remove(), 300);
   }
 }
@@ -1109,9 +1132,7 @@ function showShareToast(message, type = 'success') {
   const bgColor = type === 'success' ? 'bg-green-600/90' : 'bg-red-600/90';
   
   toast.className = `share-toast fixed bottom-6 right-6 ${bgColor} px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 z-[9999] backdrop-blur-md border border-white/10 shadow-2xl`;
-  toast.innerHTML = `
-    ${message}
-  `;
+  toast.innerHTML = `${message}`;
   
   document.body.appendChild(toast);
   
@@ -1121,132 +1142,15 @@ function showShareToast(message, type = 'success') {
   }, 2500);
 }
 
-// Add CSS animations
+// Add CSS animations via JS to ensure they exist
 const style = document.createElement('style');
 style.textContent = `
-  @keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; }
-  }
-  
   @keyframes slideOut {
-    from {
-      transform: translateX(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateX(120%);
-      opacity: 0;
-    }
-  }
-  
-  @keyframes slideIn {
-    from {
-      transform: translateY(100px);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  
-  .share-toast {
-    animation: slideIn 0.3s ease-out;
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(20px); }
   }
 `;
 document.head.appendChild(style);
-
-function showShareMenu(postId) {
-  const modal = document.createElement('div');
-  modal.className = 'modal active';
-  modal.id = 'shareModal';
-  modal.innerHTML = `
-    <div class="modal-content max-w-md">
-      <div class="flex justify-between items-center mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <i class="bi bi-share text-blue-500"></i>
-          Bagikan Postingan
-        </h3>
-        <button onclick="closeShareModal()" class="text-gray-400 hover:text-white">
-          <i class="bi bi-x-lg text-xl"></i>
-        </button>
-      </div>
-      <div class="flex flex-col gap-2">
-        <button onclick="copyShareLink(${postId})" class="glass hover:bg-gray-700/50 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
-          <i class="bi bi-link-45deg text-blue-400"></i>
-          <span>Salin Tautan</span>
-        </button>
-        <button onclick="shareToWhatsApp(${postId})" class="glass hover:bg-green-700/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
-          <i class="bi bi-whatsapp text-green-500"></i>
-          <span>WhatsApp</span>
-        </button>
-        <button onclick="shareToTwitter(${postId})" class="glass hover:bg-blue-700/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
-          <i class="bi bi-twitter text-blue-400"></i>
-          <span>Twitter/X</span>
-        </button>
-        <button onclick="shareToFacebook(${postId})" class="glass hover:bg-blue-600/20 px-4 py-3 rounded-lg text-left flex items-center gap-3 transition">
-          <i class="bi bi-facebook text-blue-600"></i>
-          <span>Facebook</span>
-        </button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  modal.addEventListener('click', function(e) {
-    if(e.target === modal) closeShareModal();
-  });
-}
-
-function copyShareLink(postId) {
-  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
-  navigator.clipboard.writeText(url).then(() => {
-    showShareToast('✓ Tautan disalin ke clipboard!');
-    closeShareModal();
-  }).catch(() => {
-    alert('Gagal menyalin tautan');
-  });
-}
-
-function shareToWhatsApp(postId) {
-  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
-  const text = 'Lihat postingan menarik di Knowledge Battle Forum:\n' + url;
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  closeShareModal();
-  showShareToast('✓ Dibagikan ke WhatsApp!');
-}
-
-function shareToTwitter(postId) {
-  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
-  const text = 'Lihat postingan menarik di Knowledge Battle Forum! #ForumDiskusi';
-  window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
-  closeShareModal();
-  showShareToast('✓ Dibagikan ke Twitter!');
-}
-
-function shareToFacebook(postId) {
-  const url = window.location.href.split('?')[0] + '?post_id=' + postId;
-  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
-  closeShareModal();
-  showShareToast('✓ Dibagikan ke Facebook!');
-}
-
-function closeShareModal() {
-  const modal = document.getElementById('shareModal');
-  if(modal) modal.remove();
-}
-
-function showShareToast(message) {
-  const toast = document.createElement('div');
-  toast.className = 'share-toast fixed bottom-5 right-5 glass px-6 py-3 rounded-full text-sm flex items-center gap-2 z-50';
-  toast.innerHTML = `<i class="bi bi-check-circle-fill text-green-400"></i> ${message}`;
-  document.body.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.style.animation = 'slideOut 0.3s ease-out';
-    setTimeout(() => toast.remove(), 300);
-  }, 2000);
-}
 
 // Notification Toggle
 function toggleNotif() {
@@ -1271,13 +1175,14 @@ function updateTime() {
 setInterval(updateTime, 60000);
 updateTime();
 
+// Mock Weather API or Open-Meteo
 fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&current_weather=true')
   .then(r => r.json())
   .then(data => {
     document.getElementById('temp').textContent = Math.round(data.current_weather.temperature) + '°C';
   })
   .catch(() => {
-    document.getElementById('temp').textContent = '28°C';
+    document.getElementById('temp').textContent = '28°C'; // Fallback
   });
 
 // Mention Autocomplete
@@ -1285,60 +1190,65 @@ const usersList = <?= json_encode($users_list) ?>;
 const textarea = document.getElementById('caption');
 const dropdown = document.getElementById('mention-dropdown');
 
-textarea.addEventListener('input', function(e) {
-  const text = this.value;
-  const cursorPos = this.selectionStart;
-  const textBeforeCursor = text.substring(0, cursorPos);
-  const match = textBeforeCursor.match(/@(\w*)$/);
-  
-  if(match) {
-    const query = match[1].toLowerCase();
-    const filtered = usersList.filter(u => u.username.toLowerCase().startsWith(query));
+if(textarea) {
+    textarea.addEventListener('input', function(e) {
+    const text = this.value;
+    const cursorPos = this.selectionStart;
+    const textBeforeCursor = text.substring(0, cursorPos);
+    const match = textBeforeCursor.match(/@(\w*)$/);
     
-    if(filtered.length > 0) {
-      dropdown.innerHTML = filtered.map(u => 
-        `<div class="p-2 hover:bg-white/10 rounded cursor-pointer" onclick="insertMention('${u.username}')">
-          @${u.username}
-        </div>`
-      ).join('');
-      dropdown.classList.remove('hidden');
+    if(match) {
+      const query = match[1].toLowerCase();
+      const filtered = usersList.filter(u => u.username.toLowerCase().startsWith(query));
+      
+      if(filtered.length > 0) {
+        dropdown.innerHTML = filtered.map(u => 
+          `<div class="p-2 hover:bg-white/10 rounded cursor-pointer" onclick="insertMention('${u.username}')">
+            @${u.username}
+          </div>`
+        ).join('');
+        dropdown.classList.remove('hidden');
+      } else {
+        dropdown.classList.add('hidden');
+      }
     } else {
       dropdown.classList.add('hidden');
     }
-  } else {
-    dropdown.classList.add('hidden');
-  }
-});
+  });
+}
 
 const editTextarea = document.getElementById('edit_caption');
 const editDropdown = document.getElementById('edit-mention-dropdown');
 
-editTextarea.addEventListener('input', function(e) {
-  const text = this.value;
-  const cursorPos = this.selectionStart;
-  const textBeforeCursor = text.substring(0, cursorPos);
-  const match = textBeforeCursor.match(/@(\w*)$/);
-  
-  if(match) {
-    const query = match[1].toLowerCase();
-    const filtered = usersList.filter(u => u.username.toLowerCase().startsWith(query));
+if(editTextarea) {
+    editTextarea.addEventListener('input', function(e) {
+    const text = this.value;
+    const cursorPos = this.selectionStart;
+    const textBeforeCursor = text.substring(0, cursorPos);
+    const match = textBeforeCursor.match(/@(\w*)$/);
     
-    if(filtered.length > 0) {
-      editDropdown.innerHTML = filtered.map(u => 
-        `<div class="p-2 hover:bg-white/10 rounded cursor-pointer" onclick="insertEditMention('${u.username}')">
-          @${u.username}
-        </div>`
-      ).join('');
-      editDropdown.classList.remove('hidden');
+    if(match) {
+      const query = match[1].toLowerCase();
+      const filtered = usersList.filter(u => u.username.toLowerCase().startsWith(query));
+      
+      if(filtered.length > 0) {
+        editDropdown.innerHTML = filtered.map(u => 
+          `<div class="p-2 hover:bg-white/10 rounded cursor-pointer" onclick="insertEditMention('${u.username}')">
+            @${u.username}
+          </div>`
+        ).join('');
+        editDropdown.classList.remove('hidden');
+      } else {
+        editDropdown.classList.add('hidden');
+      }
     } else {
       editDropdown.classList.add('hidden');
     }
-  } else {
-    editDropdown.classList.add('hidden');
-  }
-});
+  });
+}
 
 function insertMention(username) {
+  if(!textarea) return;
   const text = textarea.value;
   const cursorPos = textarea.selectionStart;
   const textBeforeCursor = text.substring(0, cursorPos);
@@ -1352,6 +1262,7 @@ function insertMention(username) {
 }
 
 function insertEditMention(username) {
+  if(!editTextarea) return;
   const text = editTextarea.value;
   const cursorPos = editTextarea.selectionStart;
   const textBeforeCursor = text.substring(0, cursorPos);
@@ -1365,34 +1276,37 @@ function insertEditMention(username) {
 }
 
 document.addEventListener('click', function(e) {
-  if(!textarea.contains(e.target) && !dropdown.contains(e.target)) {
+  if(textarea && !textarea.contains(e.target) && !dropdown.contains(e.target)) {
     dropdown.classList.add('hidden');
   }
-  if(!editTextarea.contains(e.target) && !editDropdown.contains(e.target)) {
+  if(editTextarea && !editTextarea.contains(e.target) && !editDropdown.contains(e.target)) {
     editDropdown.classList.add('hidden');
   }
 });
 
+// Video Upload Preview
 const videoUploadBox = document.querySelector('.video-upload-box');
 const videoInput = document.getElementById('main_video_input');
 const videoPreview = document.getElementById('main_video_preview');
 
-videoUploadBox.addEventListener('click', () => videoInput.click());
-videoInput.addEventListener('change', function(e) {
-  const file = this.files[0];
-  if(file && file.type.startsWith('video/')) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      videoPreview.innerHTML = `
-        <div class="mt-2">
-          <video src="${event.target.result}" class="video-preview rounded-xl" controls style="max-height: 200px;"></video>
-          <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
-        </div>
-      `;
-    };
-    reader.readAsDataURL(file);
-  }
-});
+if(videoUploadBox && videoInput) {
+    videoUploadBox.addEventListener('click', () => videoInput.click());
+    videoInput.addEventListener('change', function(e) {
+      const file = this.files[0];
+      if(file && file.type.startsWith('video/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          videoPreview.innerHTML = `
+            <div class="mt-2">
+              <video src="${event.target.result}" class="video-preview rounded-xl" controls style="max-height: 200px;"></video>
+              <p class="text-xs text-gray-400 mt-1"><i class="bi bi-check-circle-fill text-green-400"></i> ${file.name}</p>
+            </div>
+          `;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+}
 </script>
 </body>
 </html>
